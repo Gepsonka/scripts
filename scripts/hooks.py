@@ -137,13 +137,14 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	# "Batch": {
+	# 	"after_insert": "scripts.scripts.fabric_length_propagation.propagate_fabric_length"
+	# },
+  "Purchase Receipt": {
+    "on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length"
+	}
+}
 
 # Scheduled Tasks
 # ---------------
