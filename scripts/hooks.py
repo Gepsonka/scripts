@@ -143,7 +143,10 @@ doc_events = {
 	# },
   "Purchase Receipt": {
     "on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length"
-	}
+	},
+  # "Sales Order": {
+	# 	"on_submit": "scripts.scripts.guest_material_reservation.guest_material_reservation"
+	# }
 }
 
 # Scheduled Tasks
