@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:FINISHING-{finishing_name}-{#####}",
+ "creation": "2026-01-27 15:45:30.301907",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "finishing_name",
+  "description",
+  "standard_cost"
+ ],
+ "fields": [
+  {
+   "fieldname": "finishing_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Finishing Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "label": "Description"
+  },
+  {
+   "fieldname": "standard_cost",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Standard Cost",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-27 15:53:23.779755",
+ "modified_by": "Administrator",
+ "module": "Scripts",
+ "name": "Finishing",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

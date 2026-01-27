@@ -43,7 +43,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+  "Work Order": "public/js/work_order_custom.js",
+  "Sales Order": "public/js/sales_order_custom.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -147,6 +150,9 @@ doc_events = {
   # "Sales Order": {
 	# 	"on_submit": "scripts.scripts.guest_material_reservation.guest_material_reservation"
 	# }
+  "Work Order": {
+    "on_submit": "scripts.scripts.work_order_block_when_including_template.work_order_block_when_including_template"
+	}
 }
 
 # Scheduled Tasks
