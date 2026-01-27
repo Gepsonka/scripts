@@ -180,14 +180,22 @@ def cancel_physical_reservation(wo_name):
 
 @frappe.whitelist()
 def generate_work_orders(sales_order):
+    so = frappe.get_doc("Sales Order", sales_order)
+    created_wos = _generate_wos_for_so(so)
+
+    if created_wos:
+        frappe.msgprint(f"Created Work Orders: {', '.join(created_wos)}")
+    else:
+        frappe.msgprint("No Work Orders created (maybe already created or no BOMs).")
+
+def _generate_wos_for_so(so):
     from erpnext.manufacturing.doctype.work_order.work_order import get_item_details, make_work_order
     
-    so = frappe.get_doc("Sales Order", sales_order)
     created_wos = []
     
     for item in so.items:
-        # Check if WO exists
-        existing_wo = frappe.db.get_value("Work Order", {
+        # Check if WO exists for this specific item row
+        existing_wo = frappe.db.exists("Work Order", {
             "sales_order": so.name,
             "sales_order_item": item.name,
             "docstatus": ["!=", 2] 
@@ -219,12 +227,53 @@ def generate_work_orders(sales_order):
             wo.fg_warehouse = item.warehouse
             
         wo.save()
-        created_wos.append(wo.name)
+        
+        # Try to copy finishing details from an existing WO in the same project
+        if so.project:
+            # Find work orders in the same project for the same item that contain finishing details
+            # We look for a "template" that has data.
+            potential_templates = frappe.get_all("Work Order", filters={
+                "project": so.project,
+                "production_item": item.item_code,
+                "name": ["!=", wo.name],
+                "docstatus": ["<", 2]
+            }, pluck="name")
 
-    if created_wos:
-        frappe.msgprint(f"Created Work Orders: {', '.join(created_wos)}")
+            for temp_name in potential_templates:
+                temp_doc = frappe.get_doc("Work Order", temp_name)
+                if temp_doc.custom_finishing_detail:
+                    # Found one with details! Copy them.
+                    for row in temp_doc.custom_finishing_detail:
+                        new_row = wo.append("custom_finishing_detail", {})
+                        for field in row.as_dict():
+                            if field not in ["name", "parent", "parentfield", "parenttype", "creation", "modified", "docstatus", "idx", "owner"]:
+                                new_row.set(field, row.get(field))
+                    wo.save()
+                    break # Stop after finding one valid source and copying
+
+        created_wos.append(wo.name)
+    
+    return created_wos
+
+@frappe.whitelist()
+def generate_work_orders_from_project(project):
+    sales_orders = frappe.get_all("Sales Order", filters={"project": project, "docstatus": 1}, pluck="name")
+    
+    if not sales_orders:
+        frappe.msgprint("No submitted Sales Orders found for this Project.")
+        return
+
+    total_created_wos = []
+    
+    for so_name in sales_orders:
+        so = frappe.get_doc("Sales Order", so_name)
+        created = _generate_wos_for_so(so)
+        total_created_wos.extend(created)
+
+    if total_created_wos:
+        frappe.msgprint(f"Created {len(total_created_wos)} Work Orders across {len(sales_orders)} Sales Orders.")
     else:
-        frappe.msgprint("No Work Orders created (maybe already created or no BOMs).")
+        frappe.msgprint("No new Work Orders created.")
 
 @frappe.whitelist()
 def get_related_work_orders(wo_name):
@@ -306,12 +355,6 @@ def duplicate_sales_orders(source_name, count):
     if not source_doc.project:
         frappe.throw("Duplication is only allowed for Sales Orders linked to a Project.")
 
-    # Get Work Orders linked to the source Sales Order
-    source_wos = frappe.get_all("Work Order", 
-        filters={"sales_order": source_name, "docstatus": ["<", 2]}, 
-        fields=["name", "sales_order_item"]
-    )
-
     created_sos = []
     
     for i in range(count):
@@ -322,31 +365,6 @@ def duplicate_sales_orders(source_name, count):
         # Link to Project is maintained by copy_doc
         
         new_doc.insert()
-        new_doc.submit()
         created_sos.append(new_doc.name)
-        
-        # Map source SO items to new SO items (assuming order is preserved)
-        item_map = {}
-        if len(source_doc.items) == len(new_doc.items):
-            for idx, item in enumerate(source_doc.items):
-                 item_map[item.name] = new_doc.items[idx].name
-
-        # Duplicate Work Orders
-        for wo_data in source_wos:
-            try:
-                source_wo = frappe.get_doc("Work Order", wo_data.name)
-                new_wo = frappe.copy_doc(source_wo)
-                new_wo.sales_order = new_doc.name
-                new_wo.produced_qty = 0
-                new_wo.idx = None
-                
-                # Link to the correct item in the new Sales Order
-                if source_wo.sales_order_item and source_wo.sales_order_item in item_map:
-                    new_wo.sales_order_item = item_map[source_wo.sales_order_item]
-                
-                new_wo.insert()
-
-            except Exception as e:
-                frappe.log_error(f"Failed to duplicate Work Order {wo_data.name}: {str(e)}")
         
     return f"Created {len(created_sos)} Sales Orders: {', '.join(created_sos)}"
