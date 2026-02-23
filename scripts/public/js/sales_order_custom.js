@@ -45,5 +45,16 @@ frappe.ui.form.on('Sales Order', {
         });
       }
     }
+  },
+  setup: function (frm) {
+
+    frm.set_query("fabric", "items", function (doc, cdt, cdn) {
+      return {
+        filters: {
+          "item_group": ["descendants of", "Anyagok"]
+        }
+      };
+    });
+
   }
 });

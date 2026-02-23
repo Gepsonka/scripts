@@ -149,11 +149,12 @@ doc_events = {
     "on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length"
 	},
   # "Sales Order": {
-	# 	"on_submit": "scripts.scripts.guest_material_reservation.guest_material_reservation"
-	# }
+	# 	"on_submit": "scripts.scripts.propagate_chosen_fabric.propagate_chosen_fabric"
+	# },
   "Work Order": {
-    "on_submit": "scripts.scripts.work_order_block_when_including_template.work_order_block_when_including_template"
-	}
+    "on_submit": "scripts.scripts.work_order_scripts.main_scripts.on_submit",
+    "before_save": "scripts.scripts.work_order_scripts.main_scripts.on_save"
+  }
 }
 
 # Scheduled Tasks
