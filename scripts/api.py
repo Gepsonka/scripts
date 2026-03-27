@@ -1,5 +1,20 @@
 import frappe
 
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_fabric_items(doctype, txt, searchfield, start, page_len, filters):
+    from frappe.utils.nestedset import get_descendants_of
+    item_groups = get_descendants_of("Item Group", "Anyagok", ignore_permissions=True)
+    item_groups.append("Anyagok")
+    return frappe.db.get_all(
+        "Item",
+        filters=[["item_group", "in", item_groups], [searchfield, "like", f"%{txt}%"]],
+        fields=["name", "item_name"],
+        start=start,
+        page_length=page_len,
+        as_list=True,
+    )
+
 def is_template_item(item_code):
     is_stock_item = frappe.db.get_value("Item", item_code, "is_stock_item")
     return not is_stock_item

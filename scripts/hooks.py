@@ -43,11 +43,7 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {
-  "Work Order": "public/js/work_order_custom.js",
-  "Sales Order": "public/js/sales_order_custom.js",
-  "Project": "public/js/project_custom.js"
-}
+# doctype_js removed - JS files are now in doctype folders and auto-loaded
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -153,7 +149,8 @@ doc_events = {
 	# },
   "Work Order": {
     "on_submit": "scripts.scripts.work_order_scripts.main_scripts.on_submit",
-    "before_save": "scripts.scripts.work_order_scripts.main_scripts.on_save"
+    "before_save": "scripts.scripts.work_order_scripts.main_scripts.on_save",
+    "before_validate": "scripts.scripts.work_order_scripts.main_scripts.before_validate" 
   }
 }
 

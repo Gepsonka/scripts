@@ -1,14 +1,14 @@
-frappe.ui.form.on('Work Order', {
-  refresh: function (frm) {
+// Copyright (c) 2026, asd and contributors
+// For license information, please see license.txt
+
+frappe.ui.form.on("Work Order", {
+  refresh(frm) {
     // Define has_reservation at the top level of the function
     let has_reservation = frm.doc.custom_reservation_log && frm.doc.custom_reservation_log.length > 0;
 
     // MOST MÁR Draft (0) és Submitted (1) állapotban is engedjük
     // De Cancelled (2)-ben nem.
     if (frm.doc.docstatus < 2 && frm.doc.status !== "Completed") {
-
-      // Van-e már foglalás?
-      // let has_reservation = frm.doc.custom_reservation_log && frm.doc.custom_reservation_log.length > 0;
 
       // Gomb felirat és szín logika
       let label = '';
@@ -21,7 +21,6 @@ frappe.ui.form.on('Work Order', {
           btn_class = 'btn-warning'; // Narancs szín a figyelemfelkeltéshez
         } else {
           // Ha Submitted és van foglalás, akkor inkább Visszavonást kínálunk fel
-          // (De dönthetsz úgy is, hogy itt is engeded a frissítést)
           label = __('Foglalás Visszavonása');
           btn_class = 'btn-danger';
         }
@@ -152,33 +151,33 @@ frappe.ui.form.on('Work Order', {
           });
 
           let html = `
-            <style>
-              .wo-select-table th, .wo-select-table td { padding: 8px; }
-              .wo-select-table { width: 100%; border-collapse: collapse; }
-              .wo-select-table thead { background-color: var(--control-bg); font-weight: bold; }
-            </style>
-            <div style="max-height: 400px; overflow-y: auto;">
-              <table class="wo-select-table table table-bordered table-hover">
-                <thead>
-                  <tr>
-                    <th style="width: 30px; text-align: center;"><input type="checkbox" id="select-all-wos"></th>
-                    <th>${__("Work Order")}</th>
-                    <th>${__("Status")}</th>
-                    <th>${__("Qty")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-          `;
+						<style>
+							.wo-select-table th, .wo-select-table td { padding: 8px; }
+							.wo-select-table { width: 100%; border-collapse: collapse; }
+							.wo-select-table thead { background-color: var(--control-bg); font-weight: bold; }
+						</style>
+						<div style="max-height: 400px; overflow-y: auto;">
+							<table class="wo-select-table table table-bordered table-hover">
+								<thead>
+									<tr>
+										<th style="width: 30px; text-align: center;"><input type="checkbox" id="select-all-wos"></th>
+										<th>${__("Work Order")}</th>
+										<th>${__("Status")}</th>
+										<th>${__("Qty")}</th>
+									</tr>
+								</thead>
+								<tbody>
+					`;
 
           work_orders.forEach(wo => {
             html += `
-              <tr>
-                <td style="text-align: center;"><input type="checkbox" class="wo-checkbox" value="${wo.name}"></td>
-                <td><a href="/app/work-order/${wo.name}" target="_blank">${wo.name}</a></td>
-                <td>${wo.status}</td>
-                <td>${wo.qty}</td>
-              </tr>
-            `;
+							<tr>
+								<td style="text-align: center;"><input type="checkbox" class="wo-checkbox" value="${wo.name}"></td>
+								<td><a href="/app/work-order/${wo.name}" target="_blank">${wo.name}</a></td>
+								<td>${wo.status}</td>
+								<td>${wo.qty}</td>
+							</tr>
+						`;
           });
 
           html += `</tbody></table></div>`;
@@ -218,18 +217,6 @@ frappe.ui.form.on('Work Order', {
 
   }
 });
-
-
-// frappe.ui.form.on("Work Order", {
-//   refresh: function (frm) {
-//     if (frm.doc.docstatus < 2 && frm.doc.status !== "Completed") {
-//       let has_reservation = frm.doc.custom_reservation_log && frm.dov.custom_reservation_log.length > 0
-
-
-
-//     }
-//   }
-// })
 
 // Segédfüggvény a híváshoz
 function call_api(method, args) {

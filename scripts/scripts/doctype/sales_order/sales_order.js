@@ -1,3 +1,9 @@
+// Copyright (c) 2026, asd and contributors
+// For license information, please see license.txt
+
+// Load ERPNext's SellingController (defines item_code auto-fill, UOM, pricing, etc.)
+erpnext.sales_common.setup_selling_controller();
+
 frappe.ui.form.on('Sales Order', {
   refresh: function (frm) {
     if (frm.doc.docstatus === 1) {
@@ -47,14 +53,22 @@ frappe.ui.form.on('Sales Order', {
     }
   },
   setup: function (frm) {
-
-    frm.set_query("fabric", "items", function (doc, cdt, cdn) {
+    frm.set_query("fabric", "items", function () {
       return {
-        filters: {
-          "item_group": ["descendants of", "Anyagok"]
-        }
+        query: "scripts.api.get_fabric_items"
       };
     });
+  },
 
-  }
+  // Propagate the parent delivery_date to any items that don't have one set
+  delivery_date: function (frm) {
+    $.each(frm.doc.items || [], function (i, d) {
+      if (!d.delivery_date) d.delivery_date = frm.doc.delivery_date;
+    });
+    refresh_field("items");
+  },
 });
+
+// Wire up ERPNext's SellingController so it handles item_code auto-fill
+// (item_name, UOM, conversion_factor, pricing) for this form
+extend_cscript(cur_frm.cscript, new erpnext.selling.SellingController({ frm: cur_frm }));
