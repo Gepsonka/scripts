@@ -7,11 +7,15 @@ def propagate_chosen_fabric(doc:Document, method):
 
   if doc.sales_order and doc.sales_order_item:
       
-      sales_order_fabric_fieldname = "fabric"
-      
       template_fabric_code = "ANYAG"
-      
-      chosen_fabric = frappe.db.get_value("Sales Order Item", doc.sales_order_item, sales_order_fabric_fieldname)
+
+      chosen_fabric = frappe.db.get_value(
+          "Sales Order Item",
+          doc.sales_order_item,
+          ["custom_anyag", "fabric"],
+          as_dict=True,
+      )
+      chosen_fabric = chosen_fabric.custom_anyag or chosen_fabric.fabric if chosen_fabric else None
 
       if chosen_fabric:
           

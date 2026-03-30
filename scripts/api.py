@@ -205,6 +205,7 @@ def generate_work_orders(sales_order):
 
 def _generate_wos_for_so(so):
     from erpnext.manufacturing.doctype.work_order.work_order import get_item_details, make_work_order
+    from scripts.scripts.work_order_scripts import select_bom_from_sales_order_item
     
     created_wos = []
     
@@ -229,6 +230,14 @@ def _generate_wos_for_so(so):
             continue
             
         bom_no = item_details.get("bom_no")
+        matching_bom = select_bom_from_sales_order_item.get_matching_bom_for_item_and_fabric(
+            item.item_code,
+            select_bom_from_sales_order_item.get_sales_order_item_fabric(item.name),
+            select_bom_from_sales_order_item.get_sales_order_item_kidolgozas(item.name),
+        )
+        if matching_bom:
+            bom_no = matching_bom
+
         qty = item.qty 
         
         # Create WO

@@ -5,9 +5,7 @@ frappe.ui.form.on('BOM', {
   setup: function (frm) {
     frm.set_query("main_fabric", function () {
       return {
-        filters: {
-          "item_group": "Anyagok"
-        }
+        filters: [["Item", "item_group", "descendants of", "Anyagok"]]
       };
     });
   }

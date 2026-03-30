@@ -13,6 +13,7 @@ def on_submit(doc: Document, method):
 
 def on_save(doc: Document, method):
     propagate_chosen_fabric.propagate_chosen_fabric(doc, method)
+    select_bom_from_sales_order_item.propagate_so_item_custom_fields(doc, method)
 
 
 def before_validate(doc: Document, method):

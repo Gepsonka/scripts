@@ -77,7 +77,14 @@
     "production_plan_sub_assembly_item",
     "product_bundle_item",
     "amended_from",
-    "connections_tab"
+    "connections_tab",
+    "kidolgozasok",
+    "custom_fazon",
+    "custom_szett",
+    "custom_meret",
+    "custom_anyag",
+    "custom_kidolgozasok",
+    "custom_merettabla"
   ],
   "fields": [
     {
@@ -608,10 +615,52 @@
       "options": "Kidolgozas"
     },
     {
+      "fieldname": "kidolgozasok",
+      "fieldtype": "Link",
+      "label": "Kidolgozas",
+      "options": "Kidolgozas",
+      "hidden": 1
+    },
+    {
       "fieldname": "merettipus",
       "fieldtype": "Table",
       "label": "Merettipus",
       "options": "Meret"
+    },
+    {
+      "fieldname": "custom_fazon",
+      "fieldtype": "Link",
+      "label": "Fazon",
+      "options": "Fazon"
+    },
+    {
+      "fieldname": "custom_szett",
+      "fieldtype": "Data",
+      "label": "Szett / Csomag"
+    },
+    {
+      "fieldname": "custom_meret",
+      "fieldtype": "Select",
+      "label": "M\u00e9ret",
+      "options": "36\n38\n40\n42\n44\n46\n48\n50\n52\n54\n56\n58\n60"
+    },
+    {
+      "fieldname": "custom_anyag",
+      "fieldtype": "Link",
+      "label": "Anyag (Fabric)",
+      "options": "Item"
+    },
+    {
+      "fieldname": "custom_kidolgozasok",
+      "fieldtype": "Link",
+      "label": "Kidolgozas (Finishing)",
+      "options": "Kidolgozas"
+    },
+    {
+      "fieldname": "custom_merettabla",
+      "fieldtype": "Link",
+      "label": "M\u00e9rett\u00e1bla",
+      "options": "Merettabla"
     }
   ],
   "icon": "fa fa-cogs",

@@ -42,6 +42,47 @@ frappe.ui.form.on('Sales Order Item', {
       if (!r || r.item_group !== "Products") return;
       lookup_bom_for_fabric(frm, cdt, cdn, row.item_code, row.fabric);
     });
+  },
+
+  // When Fazon (style) is selected, auto-fill related data
+  custom_fazon: function (frm, cdt, cdn) {
+    var row = locals[cdt][cdn];
+    if (!row.custom_fazon) return;
+
+    // Fetch Fazon details and auto-fill related fields
+    frappe.db.get_value("Fazon", row.custom_fazon, [
+      "custom_anyag", "custom_kidolgozasok", "custom_merettabla"
+    ], function (r) {
+      if (!r) return;
+      var changed = false;
+
+      if (r.custom_anyag && row.custom_anyag !== r.custom_anyag) {
+        frappe.model.set_value(cdt, cdn, "custom_anyag", r.custom_anyag);
+        changed = true;
+      }
+      if (r.custom_kidolgozasok && row.custom_kidolgozasok !== r.custom_kidolgozasok) {
+        frappe.model.set_value(cdt, cdn, "custom_kidolgozasok", r.custom_kidolgozasok);
+        changed = true;
+      }
+      if (r.custom_merettabla && row.custom_merettabla !== r.custom_merettabla) {
+        frappe.model.set_value(cdt, cdn, "custom_merettabla", r.custom_merettabla);
+        changed = true;
+      }
+    });
+  },
+
+  // When Szett / Csomag changes, offer to copy to other rows with same item_code
+  custom_szett: function (frm, cdt, cdn) {
+    var row = locals[cdt][cdn];
+    if (!row.custom_szett || !row.item_code) return;
+
+    // Optionally auto-fill szett for rows with same item_code
+    frm.doc.items.forEach(function (item) {
+      if (item.name !== cdn && item.item_code === row.item_code && !item.custom_szett) {
+        frappe.model.set_value(item.doctype, item.name, "custom_szett", row.custom_szett);
+      }
+    });
+    refresh_field("items");
   }
 });
 
@@ -54,12 +95,12 @@ function lookup_bom_for_fabric(frm, cdt, cdn, item_code, fabric) {
       "is_active": 1,
       "docstatus": 1
     },
-    "default_finishing",
+    "kidolgozasok",
     function (r) {
-      if (r && r.default_finishing) {
+      if (r && r.kidolgozasok) {
         var row = locals[cdt][cdn];
-        if (row.finishing !== r.default_finishing) {
-          frappe.model.set_value(cdt, cdn, "finishing", r.default_finishing);
+        if (row.finishing !== r.kidolgozasok) {
+          frappe.model.set_value(cdt, cdn, "finishing", r.kidolgozasok);
         }
       }
     }

@@ -17,8 +17,8 @@ class BOM(Document):
 
 		# Check if item is in a group descendant of Products
 		if is_item_in_products_group(self.item):
-			# Get finishing name
-			finishing_name = frappe.db.get_value("Kidolgozas", self.default_finishing, "name") or self.default_finishing
+			# Get finishing name from Kidolgozas
+			finishing_name = frappe.db.get_value("Kidolgozas", self.kidolgozasok, "name") or self.kidolgozasok
 			# Generate unique suffix using hash of item + fabric + finishing
 			suffix = frappe.generate_hash(length=4)
 			# Format: BOM-{item_code}-{finishing_name}-{suffix}
