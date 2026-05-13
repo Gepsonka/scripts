@@ -3,6 +3,7 @@ from frappe import _, _dict
 from frappe.model.document import Document
 from frappe.utils import flt
 
+
 _LINK_FIELDS = [
     "sales_order_item",
     "sales_order_detail",
