@@ -26,7 +26,9 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/scripts/css/scripts.css"
-# app_include_js = "/assets/scripts/js/scripts.js"
+app_include_js = ["/assets/scripts/js/qz_utils.js"]
+
+# include js in doctype views
 
 # include js, css files in header of web template
 # web_include_css = "/assets/scripts/css/scripts.css"
@@ -74,10 +76,9 @@ app_license = "mit"
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "scripts.utils.jinja_methods",
-# 	"filters": "scripts.utils.jinja_filters"
-# }
+jinja = {
+	"methods": ["scripts.utils.barcode_svg"]
+}
 
 # Installation
 # ------------
@@ -250,4 +251,13 @@ doc_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+# Fixtures
+# --------
+fixtures = [
+	{
+		"doctype": "Client Script",
+		"filters": [["dt", "in", ["Item"]]],
+	}
+]
 

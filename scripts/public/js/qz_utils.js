@@ -1,0 +1,226 @@
+/**
+ * QZ Tray utility for Zebra ZD220 (and compatible) barcode printing.
+ *
+ * Prerequisites on the client machine:
+ *  1. QZ Tray must be installed and running.
+ *  2. In QZ Tray settings → Security, enable "Allow unsigned" (for internal/development use).
+ *
+ * TWO connection modes are supported:
+ *
+ *  A) TCP/IP direct  (RECOMMENDED – bypasses the OS print driver entirely)
+ *     Pass opts.tcpHost = "<printer IP>" (e.g. "192.168.1.100").
+ *     The printer must be reachable on TCP port 9100 (ZPL raw port).
+ *     This is the fix when the printer outputs raw ZPL text instead of a barcode.
+ *
+ *  B) OS printer queue  (fallback)
+ *     Leave tcpHost blank; pass opts.printerName or let it auto-detect.
+ *     Requires the Zebra ZPL driver to be installed in Windows/Linux.
+ *
+ * QZ Tray JS is loaded lazily from CDN on first use.
+ */
+window.QZBarcodeUtils = (function () {
+  "use strict";
+
+  var QZ_CDN = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js";
+
+  // ── Library loading ──────────────────────────────────────────────────────
+  function loadQZScript() {
+    if (window.qz) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = QZ_CDN;
+      s.onload = resolve;
+      s.onerror = function () {
+        reject(new Error("Failed to load QZ Tray library from CDN."));
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  // ── Security (unsigned / internal use) ──────────────────────────────────
+  function setupSecurity() {
+    qz.security.setCertificatePromise(function (resolve) {
+      resolve(""); // unsigned – QZ Tray must have "Allow unsigned" enabled
+    });
+    qz.security.setSignatureAlgorithm("SHA512");
+    qz.security.setSignaturePromise(function () {
+      return function (resolve) { resolve(""); };
+    });
+  }
+
+  // ── Connection ───────────────────────────────────────────────────────────
+  function connect() {
+    return loadQZScript().then(function () {
+      if (qz.websocket.isActive()) return;
+      setupSecurity();
+      return qz.websocket.connect().catch(function () {
+        return Promise.reject(
+          new Error(
+            "Could not connect to QZ Tray. " +
+            "Please make sure QZ Tray is installed and running, " +
+            'then enable \"Allow unsigned\" in QZ Tray → Advanced → Security.'
+          )
+        );
+      });
+    });
+  }
+
+  // ── ZPL builder ─────────────────────────────────────────────────────────
+  /**
+   * Build a ZPL II label string for a Zebra ZD220 at 203 DPI.
+   *
+   * Default media: 50 mm × 25 mm
+   *   ^PW400  → 400 dots wide   (50 mm × 8 dots/mm)
+   *   ^LL200  → 200 dots tall   (25 mm × 8 dots/mm)
+   *
+   * Barcode type is chosen automatically based on the item code:
+   *   12–13 digits (numeric) → EAN-13  (European retail standard)
+   *   7–8   digits (numeric) → EAN-8   (compact European variant)
+   *   anything else          → Code 128 (fallback, alphanumeric)
+   *
+   * All barcode types print the item code as human-readable text below
+   * the bars (built-in HRI for EAN; enabled via Y parameter for Code 128).
+   *
+   * Label layout (203 DPI, 40 mm × 25 mm):
+   *   10 dot top margin → barcode (60 dots) → HRI text → 10 dot bottom margin
+   * Label: 40 mm × 25 mm (203 DPI = 8 dots/mm)
+   *   ^PW320  → 40 mm wide  (320 dots)
+   *   ^LL200  → 25 mm tall  (200 dots, feed direction)
+   *
+   * Barcode type: Code 128 — accepts any alphanumeric item code.
+   * ^BY2 → 2-dot module width.  ^BCN,50,Y,N,N → height 50 dots, HRI below bars.
+   *
+   * @param {string} itemCode  Any non-empty string (ZPL control chars ^ and ~ are stripped).
+   * @param {number} qty       Number of copies (uses ^PQ).
+   * @returns {string}         ZPL label string.
+   * @throws {Error}           If itemCode is empty after sanitisation.
+   */
+  function buildZPL(itemCode, qty) {
+    qty = Math.max(1, Math.floor(qty) || 1);
+    var code = String(itemCode).replace(/[\^~]/g, "").trim();
+
+    if (!code) {
+      throw new Error("Cannot print: item code is empty.");
+    }
+
+    return (
+      "^XA" +
+      "^LH0,0" +                       // reset label-home offset
+      "^PW320" +                       // label width  (40 mm = 320 dots)
+      "^LL240" +                       // label length (30 mm = 240 dots)
+      // ── Barcode (no built-in HRI) ───────────────────────────────────
+      "^FO20,10" +                     // 20-dot left margin, 10-dot top margin
+      "^BY2" +                         // 2-dot module width
+      "^BCN,80,N,N,N" +               // Code 128, 80-dot height, HRI disabled
+      "^FD" + code + "^FS" +
+      // ── Text below barcode (centered) ───────────────────────────────
+      "^FO0,100" +                     // x=0 so ^FB can centre across full width
+      "^A0N,30,30" +                   // scalable font, 30×30 dots (~3.7 mm)
+      "^FB320,1,0,C,0" +              // field block: 320 dots wide, 1 line, centred
+      "^FD" + code + "^FS" +
+      "^PQ" + qty +                    // print qty copies
+      "^XZ"
+    );
+  }
+
+  // ── Config factory ───────────────────────────────────────────────────────
+  /**
+   * Resolve a QZ Tray print config from opts.
+   *
+   * @param {object|string} opts
+   *   string         → treated as printerName (backward compat)
+   *   opts.tcpHost   → direct TCP/IP connection (bypasses OS driver)
+   *   opts.tcpPort   → TCP port, defaults to 9100
+   *   opts.printerName → named OS printer queue
+   * @returns {Promise<object>} QZ Tray config
+   */
+  function resolveConfig(opts) {
+    if (!opts) opts = {};
+    if (typeof opts === "string") opts = { printerName: opts };
+
+    // ── TCP/IP mode ──
+    if (opts.tcpHost && opts.tcpHost.trim()) {
+      var endpoint = { host: opts.tcpHost.trim(), port: opts.tcpPort || 9100 };
+      return Promise.resolve(qz.configs.create(endpoint));
+    }
+
+    // ── OS printer queue mode ──
+    var printerName = opts.printerName && opts.printerName.trim();
+    var printerPromise;
+    if (printerName) {
+      printerPromise = qz.printers.find(printerName);
+    } else {
+      // Auto-detect by common Zebra name fragments
+      printerPromise = qz.printers
+        .find("Zebra")
+        .catch(function () { return null; })
+        .then(function (p) {
+          if (p && (!Array.isArray(p) || p.length > 0)) return Array.isArray(p) ? p[0] : p;
+          return qz.printers.find("ZD").catch(function () { return null; });
+        })
+        .then(function (p) {
+          if (p && (!Array.isArray(p) || p.length > 0)) return Array.isArray(p) ? p[0] : p;
+          return qz.printers.getDefault();
+        });
+    }
+    return printerPromise.then(function (printer) {
+      return qz.configs.create(printer);
+    });
+  }
+
+  // ── Public API ───────────────────────────────────────────────────────────
+  /**
+   * Print one item's barcode label.
+   *
+   * @param {string} itemCode
+   * @param {number} qty
+   * @param {string|object} [opts]  printerName string, or options object:
+   *                                  { printerName, tcpHost, tcpPort }
+   * @returns {Promise}
+   */
+  function printBarcode(itemCode, qty, opts) {
+    return connect()
+      .then(function () { return resolveConfig(opts); })
+      .then(function (config) {
+        return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(itemCode, qty) }]);
+      });
+  }
+
+  /**
+   * Print barcodes for multiple items in sequence.
+   *
+   * @param {Array<{item_code: string, qty: number}>} items
+   * @param {string|object} [opts]
+   * @returns {Promise}
+   */
+  function printBarcodes(items, opts) {
+    return connect()
+      .then(function () { return resolveConfig(opts); })
+      .then(function (config) {
+        var chain = Promise.resolve();
+        items.forEach(function (item) {
+          chain = chain.then(function () {
+            return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(item.item_code, item.qty) }]);
+          });
+        });
+        return chain;
+      });
+  }
+
+  /**
+   * List all printers visible to QZ Tray.
+   * @returns {Promise<string[]>}
+   */
+  function listPrinters() {
+    return connect().then(function () {
+      return qz.printers.find(); // no argument → all printers
+    });
+  }
+
+  return {
+    printBarcode: printBarcode,
+    printBarcodes: printBarcodes,
+    buildZPL: buildZPL,
+    listPrinters: listPrinters,
+  };
+})();
