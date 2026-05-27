@@ -11,6 +11,8 @@ def execute(filters=None):
 		{"label": "Item Group", "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group", "width": 130},
 		{"label": "Warehouse", "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 150},
 		{"label": "Qty", "fieldname": "actual_qty", "fieldtype": "Float", "width": 80},
+		{"label": "Barcode Last Printed", "fieldname": "barcode_print_date", "fieldtype": "Date", "width": 130},
+		{"label": "Printed", "fieldname": "is_printed", "fieldtype": "Check", "width": 70},
 		{"label": "Print", "fieldname": "print_btn", "fieldtype": "Data", "width": 90},
 	]
 
@@ -32,7 +34,9 @@ def execute(filters=None):
 			item.item_name,
 			item.item_group,
 			bin.warehouse,
-			bin.actual_qty
+			bin.actual_qty,
+			bin.custom_barcode_print_date AS barcode_print_date,
+			COALESCE(bin.custom_barcodes_printed_qty, 0) AS barcodes_printed_qty
 		FROM
 			`tabBin` bin
 		JOIN
@@ -46,7 +50,25 @@ def execute(filters=None):
 		as_dict=True,
 	)
 
-	return columns, data
+	import math
+
+	rows = []
+	for r in data:
+		count = max(1, math.ceil(r.actual_qty))
+		printed = int(r.barcodes_printed_qty or 0)
+		for i in range(count):
+			is_printed = i < printed
+			rows.append({
+				"item_code": r.item_code,
+				"item_name": r.item_name,
+				"item_group": r.item_group,
+				"warehouse": r.warehouse,
+				"actual_qty": r.actual_qty,
+				"barcode_print_date": r.barcode_print_date if is_printed else None,
+				"is_printed": 1 if is_printed else 0,
+			})
+
+	return columns, rows
 
 
 @frappe.whitelist()

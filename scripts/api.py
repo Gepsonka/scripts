@@ -392,3 +392,49 @@ def duplicate_sales_orders(source_name, count):
         created_sos.append(new_doc.name)
         
     return f"Created {len(created_sos)} Sales Orders: {', '.join(created_sos)}"
+
+
+@frappe.whitelist()
+def update_barcode_print_date(items):
+	"""Increment custom_barcodes_printed_qty and set custom_barcode_print_date = today.
+
+	``items`` is a JSON list of dicts with keys:
+	  - ``item_code``
+	  - ``warehouse``
+	  - ``count`` (optional, defaults to 1) — how many new labels were printed
+	"""
+	import json
+
+	if isinstance(items, str):
+		items = json.loads(items)
+
+	today = frappe.utils.today()
+
+	# Aggregate counts per unique item+warehouse pair
+	counts = {}
+	for r in items:
+		item_code = r.get("item_code")
+		warehouse = r.get("warehouse")
+		if not item_code or not warehouse:
+			continue
+		key = (item_code, warehouse)
+		counts[key] = counts.get(key, 0) + int(r.get("count") or 1)
+
+	for (item_code, warehouse), count in counts.items():
+		frappe.db.sql(
+			"""
+			UPDATE `tabBin`
+			SET
+				custom_barcodes_printed_qty = LEAST(
+					COALESCE(custom_barcodes_printed_qty, 0) + %(count)s,
+					actual_qty
+				),
+				custom_barcode_print_date = %(today)s
+			WHERE item_code = %(item_code)s
+			  AND warehouse = %(warehouse)s
+			""",
+			{"today": today, "item_code": item_code, "warehouse": warehouse, "count": count},
+		)
+
+	frappe.db.commit()
+	return "ok"

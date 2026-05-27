@@ -69,9 +69,9 @@ window.QZBarcodeUtils = (function () {
   /**
    * Build a ZPL II label string for a Zebra ZD220 at 203 DPI.
    *
-   * Default media: 50 mm × 25 mm
-   *   ^PW400  → 400 dots wide   (50 mm × 8 dots/mm)
-   *   ^LL200  → 200 dots tall   (25 mm × 8 dots/mm)
+   * Default media: 40 mm × 30 mm
+   *   ^PW320  → 400 dots wide   (40 mm × 8 dots/mm)
+   *   ^LL240  → 240 dots tall   (30 mm × 8 dots/mm)
    *
    * Barcode type is chosen automatically based on the item code:
    *   12–13 digits (numeric) → EAN-13  (European retail standard)
@@ -81,46 +81,55 @@ window.QZBarcodeUtils = (function () {
    * All barcode types print the item code as human-readable text below
    * the bars (built-in HRI for EAN; enabled via Y parameter for Code 128).
    *
-   * Label layout (203 DPI, 40 mm × 25 mm):
-   *   10 dot top margin → barcode (60 dots) → HRI text → 10 dot bottom margin
-   * Label: 40 mm × 25 mm (203 DPI = 8 dots/mm)
-   *   ^PW320  → 40 mm wide  (320 dots)
-   *   ^LL200  → 25 mm tall  (200 dots, feed direction)
+   * Label layout (203 DPI, 40 mm × 30 mm):
+   *   Item name   → centered text at top (~30 dots high)
+   *   Barcode     → 10 dots below text
+   *   HRI text    → 5 dots below barcode
    *
-   * Barcode type: Code 128 — accepts any alphanumeric item code.
-   * ^BY2 → 2-dot module width.  ^BCN,50,Y,N,N → height 50 dots, HRI below bars.
-   *
-   * @param {string} itemCode  Any non-empty string (ZPL control chars ^ and ~ are stripped).
+   * @param {string} itemCode   Any non-empty string (ZPL control chars ^ and ~ are stripped).
    * @param {number} qty       Number of copies (uses ^PQ).
-   * @returns {string}         ZPL label string.
+   * @param {string} [itemName] Optional item name to print above the barcode.
+   * @returns {string}          ZPL label string.
    * @throws {Error}           If itemCode is empty after sanitisation.
    */
-  function buildZPL(itemCode, qty) {
+  function buildZPL(itemCode, qty, itemName) {
     qty = Math.max(1, Math.floor(qty) || 1);
     var code = String(itemCode).replace(/[\^~]/g, "").trim();
+    var name = itemName ? String(itemName).replace(/[\^~]/g, "").trim() : "";
 
     if (!code) {
       throw new Error("Cannot print: item code is empty.");
     }
 
-    return (
+    var label =
       "^XA" +
       "^LH0,0" +                       // reset label-home offset
       "^PW320" +                       // label width  (40 mm = 320 dots)
-      "^LL240" +                       // label length (30 mm = 240 dots)
-      // ── Barcode (no built-in HRI) ───────────────────────────────────
-      "^FO20,10" +                     // 20-dot left margin, 10-dot top margin
+      "^LL240";                        // label length (30 mm = 240 dots)
+
+    // ── Item name (above barcode, centered) ──────────────────────────
+    if (name) {
+      label +=
+        "^FO0,15" +                    // x=0 for ^FB centering, y=15 from top (extra top margin)
+        "^A0N,28,28" +                // scalable font 28×28 dots (~3.5 mm)
+        "^FB320,1,0,C,0" +           // field block: 320 wide, 1 line, 1-line spacing, centred
+        "^FD" + name + "^FS";
+    }
+
+    // ── Barcode (below item name, with HRI below bars) ────────────
+    var barcodeY = name ? 50 : 20;
+    label +=
+      "^FO20," + barcodeY + "" +       // 20-dot left margin
       "^BY2" +                         // 2-dot module width
-      "^BCN,80,N,N,N" +               // Code 128, 80-dot height, HRI disabled
-      "^FD" + code + "^FS" +
-      // ── Text below barcode (centered) ───────────────────────────────
-      "^FO0,100" +                     // x=0 so ^FB can centre across full width
-      "^A0N,30,30" +                   // scalable font, 30×30 dots (~3.7 mm)
-      "^FB320,1,0,C,0" +              // field block: 320 dots wide, 1 line, centred
-      "^FD" + code + "^FS" +
-      "^PQ" + qty +                    // print qty copies
-      "^XZ"
-    );
+      "^BCN,70,Y,N,N" +               // Code 128, 70-dot height, HRI below bars
+      "^FD" + code + "^FS";
+
+    label +=
+      // ── Copies & end ─────────────────────────────────────────────
+      "^PQ" + qty +
+      "^XZ";
+
+    return label;
   }
 
   // ── Config factory ───────────────────────────────────────────────────────
@@ -176,20 +185,21 @@ window.QZBarcodeUtils = (function () {
    * @param {number} qty
    * @param {string|object} [opts]  printerName string, or options object:
    *                                  { printerName, tcpHost, tcpPort }
+   * @param {string} [itemName]     Optional item name to print above the barcode.
    * @returns {Promise}
    */
-  function printBarcode(itemCode, qty, opts) {
+  function printBarcode(itemCode, qty, opts, itemName) {
     return connect()
       .then(function () { return resolveConfig(opts); })
       .then(function (config) {
-        return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(itemCode, qty) }]);
+        return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(itemCode, qty, itemName) }]);
       });
   }
 
   /**
    * Print barcodes for multiple items in sequence.
    *
-   * @param {Array<{item_code: string, qty: number}>} items
+   * @param {Array<{item_code: string, qty: number, item_name?: string}>} items
    * @param {string|object} [opts]
    * @returns {Promise}
    */
@@ -200,7 +210,7 @@ window.QZBarcodeUtils = (function () {
         var chain = Promise.resolve();
         items.forEach(function (item) {
           chain = chain.then(function () {
-            return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(item.item_code, item.qty) }]);
+            return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(item.item_code, item.qty, item.item_name) }]);
           });
         });
         return chain;
