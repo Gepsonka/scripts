@@ -32,12 +32,6 @@ frappe.query_reports["Barcode Labels"] = {
         ? '<span style="color:#28a745">&#10003; ' + __("Printed") + "</span>"
         : '<span style="color:#999">' + __("Not printed") + "</span>";
     }
-    if (column.fieldname === "barcode_print_date") {
-      if (value) {
-        return '<span style="color:#28a745">' + frappe.utils.escape_html(value) + "</span>";
-      }
-      return '<span style="color:#999">—</span>';
-    }
     return default_formatter(value, row, column, data);
   },
 
@@ -167,16 +161,24 @@ frappe.query_reports["Barcode Labels"] = {
     });
 
     // ── Event delegation: per-row Print button ────────────────────────────
-    // Use $(document) — Frappe DataTable intercepts cell clicks before they reach report.wrapper
-    $(document).on("click", ".qz-print-row", function () {
-      var itemCode = $(this).data("item");
-      var itemName = $(this).data("name") || "";
-      var warehouse = $(this).data("warehouse");
-      var wasPrinted = $(this).data("printed") === "1" || $(this).data("printed") === 1;
+    // Use native capture-phase listener so Frappe DataTable's stopPropagation()
+    // cannot block it. Remove any previous listener first to prevent accumulation.
+    if (window._qzBarcodeRowHandler) {
+      document.removeEventListener("click", window._qzBarcodeRowHandler, true);
+    }
+    window._qzBarcodeRowHandler = function (e) {
+      var btn = e.target.closest(".qz-print-row");
+      if (!btn) return;
+      e.stopPropagation();
+
+      var itemCode = btn.getAttribute("data-item");
+      var itemName = btn.getAttribute("data-name") || "";
+      var warehouse = btn.getAttribute("data-warehouse");
+      var wasPrinted = btn.getAttribute("data-printed") === "1";
 
       frappe.show_alert({ message: __("Printing label for {0}…", [itemCode]), indicator: "blue" });
 
-      QZBarcodeUtils.printBarcode(itemCode, 1, {}, itemName)
+      QZBarcodeUtils.printBarcodes([{ item_code: itemCode, item_name: itemName, qty: 1 }], {})
         .then(function () {
           frappe.show_alert({ message: __("Label sent to printer.", []), indicator: "green" });
           if (!wasPrinted) {
@@ -192,6 +194,7 @@ frappe.query_reports["Barcode Labels"] = {
         .catch(function (err) {
           frappe.msgprint({ title: __("Print Error"), indicator: "red", message: err.message || __("Failed to print. Please check that QZ Tray is running.") });
         });
-    });
+    };
+    document.addEventListener("click", window._qzBarcodeRowHandler, true);
   },
 };

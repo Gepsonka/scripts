@@ -17,7 +17,7 @@ function _savePrinterSettings(values) {
       _QZ_SETTINGS_KEY,
       JSON.stringify({ printer_name: values.printer_name || "" })
     );
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // Open a small dialog that lists all printers QZ Tray can see
@@ -100,7 +100,7 @@ frappe.ui.form.on("Item", {
             default: saved.printer_name || "",
             description: __(
               "Exact CUPS printer name. Leave blank to auto-detect Zebra. " +
-                "Use the Detect button to list all available printers."
+              "Use the Detect button to list all available printers."
             ),
           },
           {
@@ -124,9 +124,10 @@ frappe.ui.form.on("Item", {
             indicator: "blue",
           });
 
-          QZBarcodeUtils.printBarcode(item_code, values.qty, {
-            printerName: values.printer_name,
-          })
+          QZBarcodeUtils.printBarcodes(
+            [{ item_code: item_code, item_name: frm.doc.item_name || "", qty: values.qty }],
+            { printerName: values.printer_name }
+          )
             .then(function () {
               frappe.show_alert({
                 message: __("{0} label(s) sent to printer.", [values.qty]),

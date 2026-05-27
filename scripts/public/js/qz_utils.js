@@ -207,13 +207,29 @@ window.QZBarcodeUtils = (function () {
     return connect()
       .then(function () { return resolveConfig(opts); })
       .then(function (config) {
-        var chain = Promise.resolve();
+        // Aggregate items with the same item_code so we use ^PQ<n> for copies
+        // instead of repeating the same ZPL block N times.
+        var seen = {};
+        var aggregated = [];
         items.forEach(function (item) {
-          chain = chain.then(function () {
-            return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(item.item_code, item.qty, item.item_name) }]);
-          });
+          var key = item.item_code;
+          if (Object.prototype.hasOwnProperty.call(seen, key)) {
+            aggregated[seen[key]].qty += (item.qty || 1);
+          } else {
+            seen[key] = aggregated.length;
+            aggregated.push({
+              item_code: item.item_code,
+              item_name: item.item_name || "",
+              qty: item.qty || 1,
+            });
+          }
         });
-        return chain;
+
+        // Build one concatenated ZPL string and send as a single print job
+        var zpl = aggregated.map(function (item) {
+          return buildZPL(item.item_code, item.qty, item.item_name);
+        }).join("");
+        return qz.print(config, [{ type: "raw", format: "command", data: zpl }]);
       });
   }
 

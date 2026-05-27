@@ -7,7 +7,6 @@ frappe.listview_settings["Bin"] = {
         return;
       }
 
-      // Fetch item names for label display, then open dialog
       var item_codes = [...new Set(selected.map(function (r) { return r.item_code; }))];
 
       frappe.call({
@@ -27,7 +26,7 @@ frappe.listview_settings["Bin"] = {
               item_code: row.item_code,
               item_name: name_map[row.item_code] || row.item_code,
               warehouse: row.warehouse,
-              qty: Math.max(1, Math.ceil(parseFloat(row.actual_qty) || 1)),
+              actual_qty: Math.max(1, Math.ceil(parseFloat(row.actual_qty) || 1)),
             };
           });
 
@@ -39,20 +38,17 @@ frappe.listview_settings["Bin"] = {
 };
 
 function _openBinPrintDialog(items, listview) {
-  // Build checklist — items without barcode_print_date are checked by default
   var rows_html = items.map(function (item, idx) {
-    var printed_label = item.barcode_print_date
-      ? ' <small style="color:#28a745">(' + __("last: ") + item.barcode_print_date + ")</small>"
-      : ' <small style="color:#999">(' + __("never printed") + ")</small>";
     return (
-      '<div class="checkbox" style="margin:4px 0">' +
-      "<label>" +
-      '<input type="checkbox" class="bin-item-check" data-idx="' + idx + '"> ' +
-      frappe.utils.escape_html(item.item_code) +
-      " — " + frappe.utils.escape_html(item.item_name) +
-      " (" + __("qty: ") + item.qty + ")" +
-      printed_label +
-      "</label>" +
+      '<div style="display:flex;align-items:center;gap:6px;margin:4px 0;flex-wrap:nowrap">' +
+      '<input type="checkbox" class="bin-item-check" data-idx="' + idx + '" style="flex-shrink:0"> ' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+      frappe.utils.escape_html(item.item_code) + ' — ' + frappe.utils.escape_html(item.item_name) + '">' +
+      frappe.utils.escape_html(item.item_code) + " — " + frappe.utils.escape_html(item.item_name) +
+      "</span>" +
+      '<input type="number" class="bin-qty-input form-control input-xs" data-idx="' + idx + '" ' +
+      'value="' + item.actual_qty + '" min="1" style="width:64px;flex-shrink:0" title="' + __("Copies to print") + '"> ' +
+      '<small style="flex-shrink:0;color:#888">' + __("copies") + "</small>" +
       "</div>"
     );
   });
@@ -92,7 +88,17 @@ function _openBinPrintDialog(items, listview) {
       var printer = d.get_value("printer_name");
       var opts = printer ? { printerName: printer } : {};
 
-      var items_to_print = selected_indices.map(function (idx) { return items[idx]; });
+      var items_to_print = selected_indices.map(function (idx) {
+        var qty = parseInt(d.$wrapper.find('.bin-qty-input[data-idx="' + idx + '"]').val()) || 1;
+        qty = Math.max(1, qty);
+        return {
+          item_code: items[idx].item_code,
+          item_name: items[idx].item_name,
+          warehouse: items[idx].warehouse,
+          qty: qty,
+        };
+      });
+
       var total = items_to_print.reduce(function (s, i) { return s + i.qty; }, 0);
 
       d.hide();
@@ -104,7 +110,7 @@ function _openBinPrintDialog(items, listview) {
           frappe.show_alert({ message: __("{0} label(s) sent to printer.", [total]), indicator: "green" });
 
           var bin_items = items_to_print.map(function (i) {
-            return { item_code: i.item_code, warehouse: i.warehouse };
+            return { item_code: i.item_code, warehouse: i.warehouse, count: i.qty };
           });
           frappe.call({
             method: "scripts.api.update_barcode_print_date",
@@ -124,11 +130,7 @@ function _openBinPrintDialog(items, listview) {
 
   d.show();
 
-  // Set check states via JS (not HTML attribute — sanitizer may strip it)
-  d.$wrapper.find(".bin-item-check").each(function () {
-    var item = items[parseInt($(this).data("idx"))];
-    $(this).prop("checked", !item.barcode_print_date);
-  });
+  d.$wrapper.find(".bin-item-check").prop("checked", true);
 
   d.$wrapper.find("#bin-check-all").on("click", function () {
     d.$wrapper.find(".bin-item-check").prop("checked", true);
