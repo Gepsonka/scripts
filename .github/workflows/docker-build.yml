@@ -1,0 +1,88 @@
+name: Build and Push Docker Image
+
+# Triggers on direct pushes to master AND on merged pull requests
+# (a merged PR fires a push event on the target branch)
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      erpnext_branch:
+        description: "ERPNext branch to include"
+        required: false
+        default: "version-16"
+      frappe_branch:
+        description: "Frappe branch to use as base"
+        required: false
+        default: "version-16"
+
+env:
+  ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
+  FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'version-16' }}
+
+jobs:
+  build-and-push:
+    name: Build ERPNext + Scripts image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout scripts app
+        uses: actions/checkout@v4
+
+      - name: Clone frappe_docker
+        uses: actions/checkout@v4
+        with:
+          repository: frappe/frappe_docker
+          path: frappe_docker
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=${{ env.ERPNEXT_BRANCH }}
+            type=sha,prefix=,format=short
+
+      - name: Create apps.json
+        run: |
+          cat > frappe_docker/apps.json <<EOF
+          [
+            {
+              "url": "https://github.com/frappe/erpnext",
+              "branch": "${{ env.ERPNEXT_BRANCH }}"
+            },
+            {
+              "url": "https://github.com/Gepsonka/scripts",
+              "branch": "${{ github.ref_name }}"
+            }
+          ]
+          EOF
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: frappe_docker
+          file: frappe_docker/images/layered/Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            FRAPPE_PATH=https://github.com/frappe/frappe
+            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+            CACHE_BUST=${{ github.sha }}
+          secrets: |
+            apps_json=${{ github.workspace }}/frappe_docker/apps.json
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
