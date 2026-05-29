@@ -22,17 +22,17 @@ def qz_sign(challenge):
 
     if os.path.exists(_QZ_KEY_PATH):
         with open(_QZ_KEY_PATH, "rb") as f:
-            private_key_pem = f.read()
+            private_key_pem: bytes | None = f.read()
     else:
         pem_str = frappe.conf.get("qz_private_key")
-        if not pem_str:
-            frappe.throw("QZ private key not found. Mount it as a Kubernetes secret at /run/secrets/qz_private_key.")
-        private_key_pem = pem_str.encode()
+        private_key_pem = pem_str.encode() if pem_str else None
+
+    if private_key_pem is None:
+        return ""  # no key configured — QZ Tray will fall back to unsigned mode
 
     loaded = serialization.load_pem_private_key(private_key_pem, password=None)
     if not isinstance(loaded, RSAPrivateKey):
-        frappe.throw("QZ private key must be an RSA key.")
-        return
+        return ""  # wrong key type — fall back to unsigned
     signature = loaded.sign(
         challenge.encode(),
         padding.PKCS1v15(),

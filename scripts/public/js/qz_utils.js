@@ -74,10 +74,8 @@ window.QZBarcodeUtils = (function () {
         frappe.call({
           method: "scripts.api.qz_sign",
           args: { challenge: toSign },
-          callback: function (r) {
-            if (r.message) resolve(r.message);
-            else reject(new Error("QZ signing failed"));
-          }
+          callback: function (r) { resolve(r.message || ""); },
+          error: function () { resolve(""); }
         });
       };
     });
