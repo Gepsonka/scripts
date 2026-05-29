@@ -61,14 +61,17 @@ jobs:
           [
             {
               "url": "https://github.com/frappe/erpnext",
-              "branch": "${{ env.ERPNEXT_BRANCH }}"
+              "branch": "$ERPNEXT_BRANCH"
             },
             {
               "url": "https://github.com/Gepsonka/scripts",
-              "branch": "${{ github.ref_name }}"
+              "branch": "$SCRIPTS_BRANCH"
             }
           ]
           EOF
+        env:
+          ERPNEXT_BRANCH: ${{ env.ERPNEXT_BRANCH }}
+          SCRIPTS_BRANCH: ${{ github.ref_name }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -82,7 +85,7 @@ jobs:
             FRAPPE_PATH=https://github.com/frappe/frappe
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
             CACHE_BUST=${{ github.sha }}
-          secrets: |
-            apps_json=${{ github.workspace }}/frappe_docker/apps.json
+          secret-files: |
+            apps_json=./frappe_docker/apps.json
           cache-from: type=gha
           cache-to: type=gha,mode=max
