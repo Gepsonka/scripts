@@ -1,5 +1,69 @@
 import frappe
 
+# Kubernetes mounts both QZ secrets here as read-only tmpfs files.
+# Configure via volumeMounts + secretName in your k3s Deployment.
+_QZ_KEY_PATH  = "/run/secrets/qz_private_key"
+_QZ_CERT_PATH = "/run/secrets/qz_certificate"
+
+
+@frappe.whitelist()
+def qz_sign(challenge):
+    """Sign a QZ Tray challenge with the RSA private key.
+
+    Key lookup order:
+      1. /run/secrets/qz_private_key  (k3s/k8s Secret volume mount — preferred)
+      2. frappe.conf["qz_private_key"] (fallback: bench --site <s> set-config ...)
+    """
+    import base64
+    import os
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+
+    if os.path.exists(_QZ_KEY_PATH):
+        with open(_QZ_KEY_PATH, "rb") as f:
+            private_key_pem = f.read()
+    else:
+        pem_str = frappe.conf.get("qz_private_key")
+        if not pem_str:
+            frappe.throw("QZ private key not found. Mount it as a Kubernetes secret at /run/secrets/qz_private_key.")
+        private_key_pem = pem_str.encode()
+
+    loaded = serialization.load_pem_private_key(private_key_pem, password=None)
+    if not isinstance(loaded, RSAPrivateKey):
+        frappe.throw("QZ private key must be an RSA key.")
+        return
+    signature = loaded.sign(
+        challenge.encode(),
+        padding.PKCS1v15(),
+        hashes.SHA512(),
+    )
+    return base64.b64encode(signature).decode()
+
+
+@frappe.whitelist(allow_guest=True)
+def qz_certificate():
+    """Return the QZ Tray digital certificate PEM string.
+
+    The certificate is public data, but managed via k3s so it can be
+    rotated without rebuilding or redeploying the image.
+
+    Lookup order:
+      1. /run/secrets/qz_certificate  (k3s Secret volume mount)
+      2. frappe.conf["qz_certificate"] (fallback: bench set-config)
+    """
+    import os
+
+    if os.path.exists(_QZ_CERT_PATH):
+        with open(_QZ_CERT_PATH, "r") as f:
+            return f.read()
+
+    cert = frappe.conf.get("qz_certificate")
+    if not cert:
+        return ""  # unsigned fallback — QZ Tray must allow unsigned
+    return cert
+
+
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_fabric_items(doctype, txt, searchfield, start, page_len, filters):

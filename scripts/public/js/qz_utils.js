@@ -37,14 +37,49 @@ window.QZBarcodeUtils = (function () {
     });
   }
 
-  // ── Security (unsigned / internal use) ──────────────────────────────────
+  // ── Security ─────────────────────────────────────────────────────────────
+  //
+  // Two modes:
+  //
+  //  A) SIGNED (recommended for production — no dialog ever)
+  //     1. Generate a key pair:
+  //          openssl genrsa -out private-key.pem 2048
+  //          openssl req -new -x509 -key private-key.pem -out digital-certificate.txt -days 3650
+  //     2. Place digital-certificate.txt in:
+  //          apps/scripts/scripts/public/digital-certificate.txt
+  //        It will be served at /assets/scripts/digital-certificate.txt
+  //     3. Store the private key in site config:
+  //          bench --site <site> set-config qz_private_key "$(awk 'NF {sub(/\r/, ""); printf "%s\n", $0}' private-key.pem)"
+  //     4. Install digital-certificate.txt in QZ Tray:
+  //          Tray icon → Preferences → Advanced → Site Certificate → import file.
+  //
+  //  B) UNSIGNED (development / internal only)
+  //     If the k3s secret is not mounted, enable "Allow unsigned" in QZ Tray:
+  //          Tray icon → Preferences → Advanced → uncheck "Block unsigned requests"
+
   function setupSecurity() {
+    // Fetch the certificate from the server (reads from k3s secret mount).
+    // Falls back to unsigned mode if the endpoint returns empty.
     qz.security.setCertificatePromise(function (resolve) {
-      resolve(""); // unsigned – QZ Tray must have "Allow unsigned" enabled
+      frappe.call({
+        method: "scripts.api.qz_certificate",
+        callback: function (r) { resolve(r.message || ""); },
+        error: function () { resolve(""); }
+      });
     });
+
     qz.security.setSignatureAlgorithm("SHA512");
-    qz.security.setSignaturePromise(function () {
-      return function (resolve) { resolve(""); };
+    qz.security.setSignaturePromise(function (toSign) {
+      return function (resolve, reject) {
+        frappe.call({
+          method: "scripts.api.qz_sign",
+          args: { challenge: toSign },
+          callback: function (r) {
+            if (r.message) resolve(r.message);
+            else reject(new Error("QZ signing failed"));
+          }
+        });
+      };
     });
   }
 

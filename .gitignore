@@ -5,3 +5,8 @@
 tags
 node_modules
 __pycache__
+
+# QZ Tray secrets — never commit these
+private-key.pem
+*.key.pem
+k8s/qz-secret.yaml

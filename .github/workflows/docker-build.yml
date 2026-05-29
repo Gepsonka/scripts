@@ -20,6 +20,7 @@ on:
 env:
   ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
   FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'version-16' }}
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
 
 jobs:
   build-and-push:
@@ -49,7 +50,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
+          images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
             type=raw,value=${{ env.ERPNEXT_BRANCH }}
