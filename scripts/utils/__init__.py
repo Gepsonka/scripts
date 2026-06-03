@@ -1,7 +1,5 @@
 import io
 import re
-import barcode
-from barcode.writer import SVGWriter
 
 
 def barcode_svg(value, height=15, show_text=False):
@@ -9,6 +7,9 @@ def barcode_svg(value, height=15, show_text=False):
 	if not value:
 		return ""
 	try:
+		import barcode
+		from barcode.writer import SVGWriter
+
 		writer = SVGWriter()
 		bc = barcode.get("code128", str(value), writer=writer)
 		options = {
