@@ -34,7 +34,8 @@ def execute(filters=None):
 			item.item_group,
 			bin.warehouse,
 			bin.actual_qty,
-			COALESCE(bin.custom_barcodes_printed_qty, 0) AS barcodes_printed_qty
+			COALESCE(bin.custom_barcodes_printed_qty, 0) AS barcodes_printed_qty,
+			COALESCE(item.label_info, '') AS label_info
 		FROM
 			`tabBin` bin
 		JOIN
@@ -63,6 +64,7 @@ def execute(filters=None):
 				"warehouse": r.warehouse,
 				"actual_qty": r.actual_qty,
 				"is_printed": 1 if is_printed else 0,
+				"label_info": r.label_info,
 			})
 
 	return columns, rows

@@ -102,63 +102,107 @@ window.QZBarcodeUtils = (function () {
   /**
    * Build a ZPL II label string for a Zebra ZD220 at 203 DPI.
    *
-   * Default media: 40 mm × 30 mm
-   *   ^PW320  → 400 dots wide   (40 mm × 8 dots/mm)
-   *   ^LL240  → 240 dots tall   (30 mm × 8 dots/mm)
+   * Default media: 60 mm × 35 mm
+   *   ^PW480  → 480 dots wide   (60 mm × 8 dots/mm)
+   *   ^LL280  → 280 dots tall   (35 mm × 8 dots/mm)
    *
-   * Barcode type is chosen automatically based on the item code:
-   *   12–13 digits (numeric) → EAN-13  (European retail standard)
-   *   7–8   digits (numeric) → EAN-8   (compact European variant)
-   *   anything else          → Code 128 (fallback, alphanumeric)
+   * Label layout (203 DPI, 60 mm × 35 mm):
+   *   Item name   → centered, font 28×28
+   *   Barcode     → Code 128, 60 dots tall, HRI below
+   *   Item code   → small centered text below barcode
+   *   Price       → bottom-left, font 22×22
+   *   Label info  → below price, font 16×16
    *
-   * All barcode types print the item code as human-readable text below
-   * the bars (built-in HRI for EAN; enabled via Y parameter for Code 128).
-   *
-   * Label layout (203 DPI, 40 mm × 30 mm):
-   *   Item name   → centered text at top (~30 dots high)
-   *   Barcode     → 10 dots below text
-   *   HRI text    → 5 dots below barcode
-   *
-   * @param {string} itemCode   Any non-empty string (ZPL control chars ^ and ~ are stripped).
-   * @param {number} qty       Number of copies (uses ^PQ).
-   * @param {string} [itemName] Optional item name to print above the barcode.
-   * @returns {string}          ZPL label string.
-   * @throws {Error}           If itemCode is empty after sanitisation.
+   * @param {string} itemCode    Any non-empty string (ZPL control chars ^ and ~ are stripped).
+   * @param {number} qty         Number of copies (uses ^PQ).
+   * @param {string} [itemName]  Optional item name to print above the barcode.
+   * @param {number|string} [price]    Optional price value.
+   * @param {string} [currency]  Currency code: "RON", "HUF", or "EUR".
+   * @param {string} [labelInfo] Optional label info (style/size/colour) printed below price.
+   * @returns {string}           ZPL label string.
+   * @throws {Error}            If itemCode is empty after sanitisation.
    */
-  function buildZPL(itemCode, qty, itemName) {
+  function buildZPL(itemCode, qty, itemName, price, currency, labelInfo, translations, language) {
     qty = Math.max(1, Math.floor(qty) || 1);
     var code = String(itemCode).replace(/[\^~]/g, "").trim();
+
+    // Resolve item name: try translation, then original, then item code
     var name = itemName ? String(itemName).replace(/[\^~]/g, "").trim() : "";
+    if (translations && language && translations[language]) {
+      name = translations[language].replace(/[\^~]/g, "").trim();
+    }
+    if (!name) {
+      name = code;
+    }
 
     if (!code) {
       throw new Error("Cannot print: item code is empty.");
     }
 
+    // ── Format price string ───────────────────────────────────────────
+    var priceText = "";
+    if (price !== null && price !== undefined && price !== "") {
+      var numPrice = parseFloat(price);
+      if (!isNaN(numPrice)) {
+        var parts = numPrice.toFixed(2).split(".");
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        priceText = parts.join(".") + (currency ? " " + currency : "");
+      }
+    }
+
     var label =
       "^XA" +
       "^LH0,0" +                       // reset label-home offset
-      "^PW320" +                       // label width  (40 mm = 320 dots)
-      "^LL240";                        // label length (30 mm = 240 dots)
+      "^PW480" +                       // label width  (60 mm = 480 dots)
+      "^LL280";                        // label length (35 mm = 280 dots)
 
-    // ── Item name (above barcode, centered) ──────────────────────────
+    var currentY = 5;
+
+    // ── Item name (centered, top) ───────────────────────────────────
     if (name) {
+      currentY = 2;
       label +=
-        "^FO0,15" +                    // x=0 for ^FB centering, y=15 from top (extra top margin)
-        "^A0N,28,28" +                // scalable font 28×28 dots (~3.5 mm)
-        "^FB320,1,0,C,0" +           // field block: 320 wide, 1 line, 1-line spacing, centred
+        "^FO0," + currentY +
+        "^A0N,28,28" +
+        "^FB480,1,0,C,0" +
         "^FD" + name + "^FS";
     }
 
-    // ── Barcode (below item name, with HRI below bars) ────────────
-    var barcodeY = name ? 50 : 20;
+    // ── Barcode (centered, middle) ───────────────────────────────────
+    var barcodeHeight = 60;
+    var barcodeY = 30;
     label +=
-      "^FO20," + barcodeY + "" +       // 20-dot left margin
-      "^BY2" +                         // 2-dot module width
-      "^BCN,70,Y,N,N" +               // Code 128, 70-dot height, HRI below bars
+      "^FO15," + barcodeY +
+      "^BY3" +
+      "^BCN," + barcodeHeight + ",N,N" +
       "^FD" + code + "^FS";
 
+    // ── Item code text below barcode (small, centered) ───────────────
     label +=
-      // ── Copies & end ─────────────────────────────────────────────
+      "^FO0," + (barcodeY + barcodeHeight + 2) +
+      "^A0N,16,16" +
+      "^FB480,1,0,C,0" +
+      "^FD" + code + "^FS";
+
+    // ── Label info (centered below item code text) ─────────────────
+    if (labelInfo) {
+      label +=
+        "^FO0," + (barcodeY + barcodeHeight + 22) +
+        "^A0N,22,22" +
+        "^FB480,1,0,C,0" +
+        "^FD" + labelInfo + "^FS";
+    }
+
+    // ── Price (bottom-left) ────────────────────────────────────────
+    if (priceText) {
+      label +=
+        "^FO8,152" +
+        "^A0N,28,28" +
+        "^FB360,1,0,L,0" +
+        "^FD" + priceText + "^FS";
+    }
+
+    label +=
       "^PQ" + qty +
       "^XZ";
 
@@ -219,33 +263,35 @@ window.QZBarcodeUtils = (function () {
    * @param {string|object} [opts]  printerName string, or options object:
    *                                  { printerName, tcpHost, tcpPort }
    * @param {string} [itemName]     Optional item name to print above the barcode.
+   * @param {number|string} [price] Optional price to display on the label.
+   * @param {string} [currency]     Currency code: "RON", "HUF", or "EUR".
    * @returns {Promise}
    */
-  function printBarcode(itemCode, qty, opts, itemName) {
+  function printBarcode(itemCode, qty, opts, itemName, price, currency) {
     return connect()
       .then(function () { return resolveConfig(opts); })
       .then(function (config) {
-        return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(itemCode, qty, itemName) }]);
+        return qz.print(config, [{ type: "raw", format: "command", data: buildZPL(itemCode, qty, itemName, price, currency) }]);
       });
   }
 
   /**
    * Print barcodes for multiple items in sequence.
    *
-   * @param {Array<{item_code: string, qty: number, item_name?: string}>} items
+   * @param {Array<{item_code: string, qty: number, item_name?: string, price?: number, currency?: string, label_info?: string}>} items
    * @param {string|object} [opts]
    * @returns {Promise}
    */
-  function printBarcodes(items, opts) {
+  function printBarcodes(items, opts, translations, language) {
     return connect()
       .then(function () { return resolveConfig(opts); })
       .then(function (config) {
-        // Aggregate items with the same item_code so we use ^PQ<n> for copies
+        // Aggregate items with the same item_code + currency so we use ^PQ<n> for copies
         // instead of repeating the same ZPL block N times.
         var seen = {};
         var aggregated = [];
         items.forEach(function (item) {
-          var key = item.item_code;
+          var key = item.item_code + "|" + (item.currency || "");
           if (Object.prototype.hasOwnProperty.call(seen, key)) {
             aggregated[seen[key]].qty += (item.qty || 1);
           } else {
@@ -254,13 +300,19 @@ window.QZBarcodeUtils = (function () {
               item_code: item.item_code,
               item_name: item.item_name || "",
               qty: item.qty || 1,
+              price: item.price,
+              currency: item.currency || "",
+              label_info: item.label_info || "",
             });
           }
         });
 
         // Build one concatenated ZPL string and send as a single print job
         var zpl = aggregated.map(function (item) {
-          return buildZPL(item.item_code, item.qty, item.item_name);
+          var itemTrans = (translations && typeof translations === 'object' && !Array.isArray(translations))
+            ? (translations[item.item_code] || {})
+            : {};
+          return buildZPL(item.item_code, item.qty, item.item_name, item.price, item.currency, item.label_info, itemTrans, language);
         }).join("");
         return qz.print(config, [{ type: "raw", format: "command", data: zpl }]);
       });
@@ -276,10 +328,60 @@ window.QZBarcodeUtils = (function () {
     });
   }
 
+  /**
+   * Fetch which of the supported currencies (RON, HUF, EUR) have a price
+   * defined in the Item Price list for the given item.
+   *
+   * Only currencies with price_list_rate > 0 are returned, so the caller can
+   * disable/hide the others in the currency selector.
+   *
+   * @param {string} itemCode
+   * @returns {Promise<Array<{currency: string, price: number, price_list: string}>>}
+   *   Resolves to an array of objects for each available currency, e.g.:
+   *   [ { currency: "RON", price: 12.50, price_list: "Standard Selling" }, ... ]
+   */
+  function getAvailableCurrencies(itemCode) {
+    return new Promise(function (resolve, reject) {
+      frappe.call({
+        method: "frappe.client.get_list",
+        args: {
+          doctype: "Item Price",
+          filters: [
+            ["item_code", "=", itemCode],
+            ["currency", "in", ["RON", "HUF", "EUR"]],
+            ["price_list_rate", ">", 0],
+          ],
+          fields: ["currency", "price_list_rate", "price_list"],
+          limit: 100,
+        },
+        callback: function (r) {
+          if (!r || !r.message) { resolve([]); return; }
+          // Deduplicate: if the same currency appears in multiple price lists
+          // keep the first occurrence (lowest price_list_rate by default sort).
+          var seen = {};
+          var result = [];
+          r.message.forEach(function (row) {
+            if (!Object.prototype.hasOwnProperty.call(seen, row.currency)) {
+              seen[row.currency] = true;
+              result.push({
+                currency: row.currency,
+                price: row.price_list_rate,
+                price_list: row.price_list,
+              });
+            }
+          });
+          resolve(result);
+        },
+        error: function (err) { reject(err); },
+      });
+    });
+  }
+
   return {
     printBarcode: printBarcode,
     printBarcodes: printBarcodes,
     buildZPL: buildZPL,
     listPrinters: listPrinters,
+    getAvailableCurrencies: getAvailableCurrencies,
   };
 })();

@@ -65,19 +65,101 @@ def qz_certificate():
 
 
 @frappe.whitelist()
-@frappe.validate_and_sanitize_search_inputs
-def get_fabric_items(doctype, txt, searchfield, start, page_len, filters):
-    from frappe.utils.nestedset import get_descendants_of
-    item_groups = get_descendants_of("Item Group", "Anyagok", ignore_permissions=True)
-    item_groups.append("Anyagok")
-    return frappe.db.get_all(
-        "Item",
-        filters=[["item_group", "in", item_groups], [searchfield, "like", f"%{txt}%"]],
-        fields=["name", "item_name"],
-        start=start,
-        page_length=page_len,
-        as_list=True,
+def get_item_translations(item_code, languages=None):
+    """Fetch item name translations for one or more languages.
+
+    Args:
+        item_code: The item code to look up.
+        languages: Comma-separated language codes, e.g. "hu,de,fr".
+                   If None, returns all available translations for the item.
+
+    Looks in the Translation table for source_text matching the item's
+    item_name, returning translated_text keyed by language.
+    Returns a dict: { "hu": "Hungarian name", "de": "German name", ... }
+    """
+    if not item_code:
+        return {}
+
+    # Get the item's default name
+    item_name = frappe.db.get_value("Item", item_code, "item_name") or ""
+    if not item_name:
+        return {}
+
+    lang_list = []
+    if languages:
+        lang_list = [l.strip() for l in languages.split(",") if l.strip()]
+
+    query_filters = [["source_text", "=", item_name]]
+    if lang_list:
+        query_filters.append(["language", "in", lang_list])
+
+    translations = {}
+    rows = frappe.get_all(
+        "Translation",
+        filters=query_filters,
+        fields=["language", "translated_text"],
     )
+    for r in rows:
+        translations[r["language"]] = r["translated_text"]
+
+    return translations
+
+
+@frappe.whitelist()
+def get_item_translations_batch(item_codes, languages=None):
+    """Fetch translations for multiple items at once.
+
+    Returns a dict: { item_code: { lang: translated_text, ... }, ... }
+    """
+    if not item_codes:
+        return {}
+
+    code_list = [c.strip() for c in item_codes.split(",") if c.strip()]
+    if not code_list:
+        return {}
+
+    lang_list = []
+    if languages:
+        lang_list = [l.strip() for l in languages.split(",") if l.strip()]
+
+    # Get all item names
+    items = {r.name: r.item_name for r in frappe.get_all(
+        "Item", filters=[["name", "in", code_list]], fields=["name", "item_name"]
+    )}
+
+    result = {}
+    for code in code_list:
+        result[code] = {}
+
+    if not items:
+        return result
+
+    # Build source texts list
+    source_texts = list(set(items.values()))
+
+    query_filters = [["source_text", "in", source_texts]]
+    if lang_list:
+        query_filters.append(["language", "in", lang_list])
+
+    rows = frappe.get_all(
+        "Translation",
+        filters=query_filters,
+        fields=["source_text", "language", "translated_text"],
+    )
+
+    # Build lookup: source_text -> {lang: translation}
+    trans_map = {}
+    for r in rows:
+        if r.source_text not in trans_map:
+            trans_map[r.source_text] = {}
+        trans_map[r.source_text][r.language] = r.translated_text
+
+    for code in code_list:
+        default_name = items.get(code, "")
+        if default_name and default_name in trans_map:
+            result[code] = trans_map[default_name]
+
+    return result
 
 def is_template_item(item_code):
     is_stock_item = frappe.db.get_value("Item", item_code, "is_stock_item")
