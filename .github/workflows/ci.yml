@@ -97,6 +97,13 @@ jobs:
         env:
           CI: 'Yes'
 
+      - name: Check fixtures are up-to-date
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench --site test_site export-fixtures --app scripts
+          git -C apps/scripts diff --exit-code scripts/fixtures/ || \
+            (echo "ERROR: Fixture files are out of date. Run 'bench --site <site> export-fixtures --app scripts' and commit the result." && exit 1)
+
       - name: Run Tests
         working-directory: /home/runner/frappe-bench
         run: |

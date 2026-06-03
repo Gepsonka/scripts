@@ -261,6 +261,17 @@ fixtures = [
 	{
 		"doctype": "Client Script",
 		"filters": [["dt", "in", ["Item"]]],
-	}
+	},
+	{
+		"doctype": "Custom Field",
+		"filters": [
+			["dt", "in", [
+				"Sales Order",
+				"Sales Order Item",
+				"Purchase Receipt",
+				"Purchase Receipt Item",
+			]],
+		],
+	},
 ]
 
