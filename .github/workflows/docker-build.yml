@@ -54,7 +54,8 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
             type=raw,value=${{ env.ERPNEXT_BRANCH }}
-            type=sha,prefix=,format=short
+            type=sha,prefix=sha-,format=short
+            type=raw,value=build-${{ github.run_number }}
 
       - name: Create apps.json
         run: |

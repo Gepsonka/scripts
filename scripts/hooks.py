@@ -48,7 +48,7 @@ app_include_js = [
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js removed - JS files are now in doctype folders and auto-loaded
+# doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -117,17 +117,33 @@ jinja = {
 
 # notification_config = "scripts.notifications.get_notification_config"
 
-# Permissions
-# -----------
-# Permissions evaluated in scripted ways
-
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+# Fixtures
+# --------
+fixtures = [
+	{
+		"doctype": "Client Script",
+		"filters": [["dt", "in", ["Item", "Item Price"]]],
+	},
+	{
+		"doctype": "Custom Field",
+		"filters": [
+			["dt", "in", [
+				"Item",
+				"Item Price",
+				"Sales Order",
+				"Sales Order Item",
+				"Purchase Receipt",
+				"Purchase Receipt Item",
+			]],
+		],
+	},
+	{
+		"doctype": "Property Setter",
+		"filters": [
+			["doc_type", "in", ["Item", "Item Price"]],
+		],
+	},
+]
 
 # DocType Class
 # ---------------
@@ -260,17 +276,25 @@ doc_events = {
 fixtures = [
 	{
 		"doctype": "Client Script",
-		"filters": [["dt", "in", ["Item"]]],
+		"filters": [["dt", "in", ["Item", "Item Price"]]],
 	},
 	{
 		"doctype": "Custom Field",
 		"filters": [
 			["dt", "in", [
+				"Item",
+				"Item Price",
 				"Sales Order",
 				"Sales Order Item",
 				"Purchase Receipt",
 				"Purchase Receipt Item",
 			]],
+		],
+	},
+	{
+		"doctype": "Property Setter",
+		"filters": [
+			["doc_type", "in", ["Item", "Item Price"]],
 		],
 	},
 ]

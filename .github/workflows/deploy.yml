@@ -1,0 +1,106 @@
+name: Deploy to k3s
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types: [completed]
+    branches: [master]
+
+# Only trigger if docker-build succeeded
+concurrency:
+  group: k3s-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
+  K3S_API_HOST: ${{ secrets.K3S_API_HOST }}
+
+jobs:
+  deploy:
+    name: Deploy to on-premise k3s
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout scripts app
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure SSH to bastion
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.K3S_SSH_KEY }}" > ~/.ssh/k3s_deploy_key
+          chmod 600 ~/.ssh/k3s_deploy_key
+          ssh-keyscan -H "${{ secrets.K3S_BASTION }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Fetch kubeconfig via bastion
+        run: |
+          # SSH to bastion, sudo to read k3s.yaml, rewrite server URL to public API host
+          KUBECONFIG=$(ssh -tt -o StrictHostKeyChecking=no \
+            "${{ secrets.K3S_BASTION_USER }}@${{ secrets.K3S_BASTION }}" \
+            "sudo cat /etc/rancher/k3s/k3s.yaml" \
+            | sed "s|https://127.0.0.1:6443|https://$K3S_API_HOST:6443|")
+          echo "$KUBECONFIG" > kubeconfig
+          echo "::add-mask::kubeconfig"
+          chmod 644 kubeconfig
+
+      - name: Run database migrator
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          kubectl apply -f - <<'K8S_YAML'
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: frappe-migrator
+            namespace: default
+            annotations:
+              helm.sh/hook: pre-upgrade
+              helm.sh/hook-weight: "-1"
+          spec:
+            ttlSecondsAfterFinished: 600
+            activeDeadlineSeconds: 900
+            template:
+              spec:
+                restartPolicy: OnFailure
+                containers:
+                  - name: migrator
+                    image: $IMAGE_NAME:sha-${{ github.event.workflow_run.head_sha }}
+                    command: ["bench", "--site", "all", "migrate"]
+                    env:
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: frappe-bench-db
+                            key: mariadb
+                      - name: SITES
+                        value: "dev.localhost"
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "1Gi"
+                        cpu: "1000m"
+          K8S_YAML
+          echo "Migrator Job submitted."
+
+      - name: Wait for migrator to complete
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          kubectl wait --for=condition=complete job/frappe-migrator --namespace=default --timeout=900s
+          kubectl logs job/frappe-migrator --namespace=default --tail=20
+
+      - name: Rollout new bench Deployment
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          kubectl set image deployment/frappe-bench \
+            bench=$IMAGE_NAME:sha-${{ github.event.workflow_run.head_sha }} \
+            --namespace=default
+          echo "Image updated. Waiting for rollout..."
+          kubectl rollout status deployment/frappe-bench --namespace=default --timeout=600s
+          echo "Rollout complete."
+
+      - name: Cleanup kubeconfig
+        run: rm -f kubeconfig
