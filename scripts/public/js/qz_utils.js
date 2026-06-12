@@ -111,7 +111,7 @@ window.QZBarcodeUtils = (function () {
    *   Barcode     → Code 128, 60 dots tall, HRI below
    *   Item code   → small centered text below barcode
    *   Price       → bottom-left, font 22×22
-   *   Label info  → below price, font 16×16
+   *   Label info  → below item code, centered, font 22×22, translatable via translations[language + "_info"]
    *
    * @param {string} itemCode    Any non-empty string (ZPL control chars ^ and ~ are stripped).
    * @param {number} qty         Number of copies (uses ^PQ).
@@ -135,8 +135,10 @@ window.QZBarcodeUtils = (function () {
       name = code;
     }
 
-    if (!code) {
-      throw new Error("Cannot print: item code is empty.");
+    // Resolve label info: try translation, then original
+    var info = labelInfo ? String(labelInfo).replace(/[\^~]/g, "").trim() : "";
+    if (translations && language && translations.label_info && translations.label_info[language]) {
+      info = String(translations.label_info[language]).replace(/[\^~]/g, "").trim();
     }
 
     // ── Format price string ───────────────────────────────────────────
@@ -168,29 +170,24 @@ window.QZBarcodeUtils = (function () {
         "^FD" + name + "^FS";
     }
 
-    // ── Barcode (centered, middle) ───────────────────────────────────
+    // ── Barcode (centered, 60% width) ─────────────────────────────────
     var barcodeHeight = 60;
     var barcodeY = 30;
+    var barcodeWidth = Math.floor(480 * 0.6); // 60% of label width = 288 dots
+    var barcodeMargin = Math.floor((480 - barcodeWidth) / 2); // center: 96 dots
     label +=
-      "^FO15," + barcodeY +
-      "^BY3" +
+      "^FO" + barcodeMargin + "," + barcodeY +
+      "^BY3," + Math.floor(barcodeWidth / 6) +
       "^BCN," + barcodeHeight + ",N,N" +
       "^FD" + code + "^FS";
 
-    // ── Item code text below barcode (small, centered) ───────────────
-    label +=
-      "^FO0," + (barcodeY + barcodeHeight + 2) +
-      "^A0N,16,16" +
-      "^FB480,1,0,C,0" +
-      "^FD" + code + "^FS";
-
-    // ── Label info (centered below item code text) ─────────────────
-    if (labelInfo) {
+    // ── Label info (centered below barcode) ───────────────────────
+    if (info) {
       label +=
-        "^FO0," + (barcodeY + barcodeHeight + 22) +
+        "^FO0," + (barcodeY + barcodeHeight + 4) +
         "^A0N,22,22" +
         "^FB480,1,0,C,0" +
-        "^FD" + labelInfo + "^FS";
+        "^FD" + info + "^FS";
     }
 
     // ── Price (bottom-left) ────────────────────────────────────────

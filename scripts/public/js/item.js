@@ -212,7 +212,9 @@ frappe.ui.form.on("Item", {
                   currency: values.currency || "HUF",
                   label_info: frm.doc.label_info || null,
                 }],
-                { printerName: values.printer_name }
+                { printerName: values.printer_name },
+                { [item_code]: translationsMap },
+                values.language
               )
                 .then(function () {
                   frappe.show_alert({

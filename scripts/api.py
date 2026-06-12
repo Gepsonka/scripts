@@ -80,8 +80,10 @@ def get_item_translations(item_code, languages=None):
     if not item_code:
         return {}
 
-    # Get the item's default name
-    item_name = frappe.db.get_value("Item", item_code, "item_name") or ""
+    # Get the item's default name and label_info
+    item = frappe.db.get_value("Item", item_code, ["item_name", "label_info"], as_dict=True) or {}
+    item_name = item.get("item_name") or ""
+    item_label_info = item.get("label_info") or ""
     if not item_name:
         return {}
 
@@ -89,18 +91,31 @@ def get_item_translations(item_code, languages=None):
     if languages:
         lang_list = [l.strip() for l in languages.split(",") if l.strip()]
 
-    query_filters = [["source_text", "=", item_name]]
+    # Collect source texts to translate: item_name + label_info (if set)
+    source_texts_to_fetch = [item_name]
+    if item_label_info:
+        source_texts_to_fetch.append(item_label_info)
+
+    query_filters = [["source_text", "in", source_texts_to_fetch]]
     if lang_list:
         query_filters.append(["language", "in", lang_list])
 
-    translations = {}
     rows = frappe.get_all(
         "Translation",
         filters=query_filters,
-        fields=["language", "translated_text"],
+        fields=["source_text", "language", "translated_text"],
     )
+
+    translations = {}
+    label_info_trans = {}
     for r in rows:
-        translations[r["language"]] = r["translated_text"]
+        if r["source_text"] == item_name:
+            translations[r["language"]] = r["translated_text"]
+        elif r["source_text"] == item_label_info:
+            label_info_trans[r["language"]] = r["translated_text"]
+
+    if label_info_trans:
+        translations["label_info"] = label_info_trans
 
     return translations
 
@@ -122,10 +137,11 @@ def get_item_translations_batch(item_codes, languages=None):
     if languages:
         lang_list = [l.strip() for l in languages.split(",") if l.strip()]
 
-    # Get all item names
-    items = {r.name: r.item_name for r in frappe.get_all(
-        "Item", filters=[["name", "in", code_list]], fields=["name", "item_name"]
-    )}
+    # Get all item names and label_info fields
+    item_rows = frappe.get_all(
+        "Item", filters=[["name", "in", code_list]], fields=["name", "item_name", "label_info"]
+    )
+    items = {r.name: {"item_name": r.item_name or "", "label_info": r.label_info or ""} for r in item_rows}
 
     result = {}
     for code in code_list:
@@ -134,8 +150,10 @@ def get_item_translations_batch(item_codes, languages=None):
     if not items:
         return result
 
-    # Build source texts list
-    source_texts = list(set(items.values()))
+    # Build source texts list (item names + label_info values)
+    item_names = {d["item_name"] for d in items.values() if d["item_name"]}
+    label_infos = {d["label_info"] for d in items.values() if d["label_info"]}
+    source_texts = list(item_names | label_infos)
 
     query_filters = [["source_text", "in", source_texts]]
     if lang_list:
@@ -155,9 +173,15 @@ def get_item_translations_batch(item_codes, languages=None):
         trans_map[r.source_text][r.language] = r.translated_text
 
     for code in code_list:
-        default_name = items.get(code, "")
+        item_data = items.get(code, {})
+        default_name = item_data.get("item_name", "")
+        default_info = item_data.get("label_info", "")
+
         if default_name and default_name in trans_map:
-            result[code] = trans_map[default_name]
+            result[code] = dict(trans_map[default_name])
+
+        if default_info and default_info in trans_map:
+            result[code]["label_info"] = trans_map[default_info]
 
     return result
 
