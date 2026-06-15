@@ -101,7 +101,7 @@ jobs:
           cat apps.json
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -113,7 +113,7 @@ jobs:
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
             CACHE_BUST=${{ github.sha }}
           secrets: |
-            apps_json=./apps.json
+            id=apps_json,src=./apps.json
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

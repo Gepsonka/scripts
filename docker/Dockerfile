@@ -50,7 +50,16 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
   : "${CACHE_BUST}" && \
   export APP_INSTALL_ARGS="" && \
   if [ -f /opt/frappe/apps.json ] && [ -s /opt/frappe/apps.json ]; then \
-    export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
+    # Quick sanity check: file must be valid JSON containing at least one app. \
+    if python3 -c "import json,sys; data=json.load(open('/opt/frappe/apps.json')); assert isinstance(data, list) and len(data) > 0" 2>/dev/null; then \
+      export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
+      echo "Installing apps from /opt/frappe/apps.json (secret mount):"; \
+      cat /opt/frappe/apps.json; \
+    else \
+      echo "WARNING: /opt/frappe/apps.json exists but is not valid JSON - falling back to no custom apps"; \
+    fi; \
+  else \
+    echo "No /opt/frappe/apps.json secret - bench init will only install frappe"; \
   fi && \
   bench init ${APP_INSTALL_ARGS}\
     --frappe-branch=${FRAPPE_BRANCH} \
