@@ -26,7 +26,11 @@ on:
       posawesome_branch:
         description: "POS Awesome branch to include"
         required: false
-        default: "version-15"
+        default: "develop"
+      posawesome_repo:
+        description: "POS Awesome git repo (org/name)"
+        required: false
+        default: "defendicon/POS-Awesome-V15"
       scripts_branch:
         description: "scripts app branch to include"
         required: false
@@ -35,7 +39,8 @@ on:
 env:
   ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
   FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'version-16' }}
-  POSAWESOME_BRANCH: ${{ github.event.inputs.posawesome_branch || 'version-15' }}
+  POSAWESOME_REPO: ${{ github.event.inputs.posawesome_repo || 'defendicon/POS-Awesome-V15' }}
+  POSAWESOME_BRANCH: ${{ github.event.inputs.posawesome_branch || 'develop' }}
   SCRIPTS_BRANCH: ${{ github.event.inputs.scripts_branch || github.ref_name }}
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
 
@@ -89,7 +94,7 @@ jobs:
               "branch": "$ERPNEXT_BRANCH"
             },
             {
-              "url": "https://github.com/Gepsonka/posawesome",
+              "url": "https://github.com/$POSAWESOME_REPO",
               "branch": "$POSAWESOME_BRANCH"
             },
             {
