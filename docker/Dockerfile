@@ -61,6 +61,10 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
   else \
     echo "No /opt/frappe/apps.json secret - bench init will only install frappe"; \
   fi && \
+  # Make sure the build starts from a clean state. A cached previous run may
+  # have partially populated /home/frappe/frappe-bench, which would cause
+  # `bench init` to prompt interactively on subsequent app installs.
+  rm -rf /home/frappe/frappe-bench && \
   bench init ${APP_INSTALL_ARGS}\
     --frappe-branch=${FRAPPE_BRANCH} \
     --frappe-path=${FRAPPE_PATH} \
@@ -68,6 +72,7 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
     --no-backups \
     --skip-redis-config-generation \
     --skip-assets \
+    --ignore-exist \
     --verbose \
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \

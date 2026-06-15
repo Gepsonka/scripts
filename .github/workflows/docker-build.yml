@@ -76,16 +76,17 @@ jobs:
       - name: Render apps.json
         # Compose apps.json from the per-app branches (supports manual overrides
         # via workflow_dispatch and defaults to the current scripts branch).
+        #
+        # NOTE: do NOT list "frappe" here. `bench init --frappe-path=...` already
+        # installs frappe, and a duplicate entry triggers
+        # "A directory for the application 'frappe' already exists" and aborts
+        # the build interactively (which fails in a non-TTY container).
         run: |
           cat > apps.json <<EOF
           [
             {
               "url": "https://github.com/frappe/erpnext",
               "branch": "$ERPNEXT_BRANCH"
-            },
-            {
-              "url": "https://github.com/frappe/frappe",
-              "branch": "$FRAPPE_BRANCH"
             },
             {
               "url": "https://github.com/Gepsonka/posawesome",

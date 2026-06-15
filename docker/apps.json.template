@@ -4,10 +4,6 @@
     "branch": "version-16"
   },
   {
-    "url": "https://github.com/frappe/frappe",
-    "branch": "version-16"
-  },
-  {
     "url": "https://github.com/Gepsonka/posawesome",
     "branch": "version-15"
   },
