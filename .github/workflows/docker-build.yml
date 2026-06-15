@@ -1,7 +1,14 @@
 name: Build and Push Docker Image
 
-# Triggers on direct pushes to master AND on merged pull requests
-# (a merged PR fires a push event on the target branch)
+# Builds a production-ready Frappe/ERPNext + custom apps image and pushes
+# it to Docker Hub. The image contains pre-built assets for ALL apps
+# (frappe, erpnext, posawesome, scripts) so deployments do not need
+# to run `bench build` at runtime.
+#
+# Triggers on:
+#   - push to master
+#   - merged PRs (also fire push events on master)
+#   - manual workflow_dispatch with optional branch overrides
 on:
   push:
     branches:
@@ -16,26 +23,30 @@ on:
         description: "Frappe branch to use as base"
         required: false
         default: "version-16"
+      posawesome_branch:
+        description: "POS Awesome branch to include"
+        required: false
+        default: "version-15"
+      scripts_branch:
+        description: "scripts app branch to include"
+        required: false
+        default: "master"
 
 env:
   ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
   FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'version-16' }}
+  POSAWESOME_BRANCH: ${{ github.event.inputs.posawesome_branch || 'version-15' }}
+  SCRIPTS_BRANCH: ${{ github.event.inputs.scripts_branch || github.ref_name }}
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
 
 jobs:
   build-and-push:
-    name: Build ERPNext + Scripts image
+    name: Build and push production image
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout scripts app
         uses: actions/checkout@v4
-
-      - name: Clone frappe_docker
-        uses: actions/checkout@v4
-        with:
-          repository: frappe/frappe_docker
-          path: frappe_docker
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -57,13 +68,23 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=build-${{ github.run_number }}
 
-      - name: Create apps.json
+      - name: Render apps.json
+        # Compose apps.json from the per-app branches (supports manual overrides
+        # via workflow_dispatch and defaults to the current scripts branch).
         run: |
-          cat > frappe_docker/apps.json <<EOF
+          cat > apps.json <<EOF
           [
             {
               "url": "https://github.com/frappe/erpnext",
               "branch": "$ERPNEXT_BRANCH"
+            },
+            {
+              "url": "https://github.com/frappe/frappe",
+              "branch": "$FRAPPE_BRANCH"
+            },
+            {
+              "url": "https://github.com/Gepsonka/posawesome",
+              "branch": "$POSAWESOME_BRANCH"
             },
             {
               "url": "https://github.com/Gepsonka/scripts",
@@ -71,15 +92,14 @@ jobs:
             }
           ]
           EOF
-        env:
-          ERPNEXT_BRANCH: ${{ env.ERPNEXT_BRANCH }}
-          SCRIPTS_BRANCH: ${{ github.ref_name }}
+          echo "apps.json contents:"
+          cat apps.json
 
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: frappe_docker
-          file: frappe_docker/images/layered/Containerfile
+          context: .
+          file: docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -87,7 +107,12 @@ jobs:
             FRAPPE_PATH=https://github.com/frappe/frappe
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
             CACHE_BUST=${{ github.sha }}
-          secret-files: |
-            apps_json=./frappe_docker/apps.json
+          secrets: |
+            apps_json=./apps.json
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Image summary
+        run: |
+          echo "Pushed tags:"
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/  /'
