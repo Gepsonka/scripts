@@ -64,11 +64,14 @@ RUN bench setup requirements --python && \
 #    build - without it, custom app assets are absent in the runtime image.
 RUN bench setup requirements --node && \
   bench build --production && \
-  # Verify the critical assets got built
-  test -f sites/assets/frappe/dist/js/desk.bundle.js || \
-    (echo "ERROR: frappe desk.bundle.js not built" && exit 1) && \
-  test -f sites/assets/erpnext/dist/js/item.min.js || \
-    (echo "WARNING: erpnext item.min.js not built - variants UI may not render") && \
+  # Verify the critical asset directories exist (file names have hashes, so
+  # we just check the directories were populated)
+  test -d sites/assets/frappe/dist/js || \
+    (echo "ERROR: frappe assets not built" && exit 1) && \
+  test -d sites/assets/erpnext/dist/js || \
+    (echo "ERROR: erpnext assets not built" && exit 1) && \
+  test -d sites/assets/scripts/js || \
+    (echo "ERROR: scripts assets not built - custom app failed" && exit 1) && \
   # Pre-compress the largest asset bundles to reduce served size
   find sites/assets -name "*.bundle.js" -size +50k -exec gzip -k {} \; 2>/dev/null || true && \
   # Drop build caches to reduce image size
