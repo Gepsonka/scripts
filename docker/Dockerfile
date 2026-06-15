@@ -35,6 +35,17 @@ USER frappe
 # Disable telemetry / upgrade nags during the build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+# Tell `bench build` we are in CI: this skips the `download_frappe_assets()`
+# shortcut in frappe/commands/utils.py which would otherwise try to git
+# rev-parse HEAD on ../apps/frappe. We delete .git below (to keep the image
+# small) so that call would fail with `fatal: not a git repository (or any of
+# the parent directories): .git`, and the captured error message contains `(`
+# which then breaks the subsequent `git show-ref ... | grep <msg> | sed ...`
+# shell pipeline in get_assets_link() with `Syntax error: "(" unexpected`,
+# corrupting the `tag` variable and producing a confusing
+# `Assets for Release <garbage> don't exist` warning. Building locally is
+# the canonical way in CI anyway.
+ENV CI=1
 
 # 1. Initialize the bench and fetch all apps from apps.json (BuildKit secret).
 #    `bench init --skip-assets` runs `bench get-app` for each app in apps.json
