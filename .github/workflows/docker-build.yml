@@ -101,7 +101,7 @@ jobs:
           cat apps.json
 
       - name: Build and push image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
@@ -112,8 +112,8 @@ jobs:
             FRAPPE_PATH=https://github.com/frappe/frappe
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
             CACHE_BUST=${{ github.sha }}
-          secrets: |
-            id=apps_json,src=./apps.json
+          secret-files: |
+            apps_json=./apps.json
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
