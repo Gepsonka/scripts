@@ -95,7 +95,43 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
   # Install Node deps for all apps and run a single production build.
   # `bench build --production` produces minified bundles without source maps.
   bench setup requirements --node && \
-  bench build --production && \
+  # Build JS/CSS assets for all apps. We use --app to limit the build to the
+  # apps that actually have JS bundles (skips the 'scripts' app which only
+  # has plain JS files served via app_include_js). The translation step in
+  # `bench build` uses a 4-worker multiprocessing.Pool which is fragile
+  # inside the docker build context (the pool forks 4 python processes,
+  # each loading the full frappe app, and intermittently OOMs or hits fork
+  # limits mid-erpnext - see commit history). We compile translations
+  # sequentially with babel below, which is reliable and fast (~2s).
+  bench build --production --app frappe --app erpnext --app posawesome && \
+  # Compile MO translation files sequentially using babel (the same library
+  # frappe.gettext uses internally, so the output is byte-identical to
+  # `bench build`'s multiprocessing.Pool path). Doing it here with a single
+  # worker avoids the 4-fork multiprocessing.Pool that intermittently OOMs
+  # or hits fork limits mid-erpnext inside the constrained docker build.
+  ./env/bin/python -c "
+from babel.messages.mofile import write_mo
+from babel.messages.pofile import read_po
+from pathlib import Path
+import frappe
+from frappe.utils import get_bench_path
+frappe.init('')
+from frappe.gettext.translate import get_locales
+total = 0
+for app in ('frappe', 'erpnext', 'posawesome', 'scripts'):
+    for locale in get_locales(app):
+        po_path = Path(frappe.get_app_path(app)) / 'locale' / f'{locale}.po'
+        mo_path = Path(get_bench_path()) / 'sites' / 'assets' / 'locale' / locale / 'LC_MESSAGES' / f'{app}.mo'
+        if not po_path.exists():
+            continue
+        mo_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(po_path, 'rb') as f:
+            catalog = read_po(f)
+        with open(mo_path, 'wb') as f:
+            write_mo(f, catalog)
+        total += 1
+print(f'Compiled {total} translation files')
+" && \
   # Sanity-check the critical asset directories were populated (file names
   # are hashed, so we only check the directories exist). If `bench build`
   # above fails, the RUN step aborts and the image never builds - this just
