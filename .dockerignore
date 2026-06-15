@@ -1,0 +1,64 @@
+# Keep the build context small - the Docker build only needs the scripts
+# app source and our docker/ directory. The frappe_docker repo and
+# upstream apps are pulled by `bench init --apps_path=apps.json` during
+# the build itself.
+
+# Git internals and history
+.git
+.gitignore
+.gitattributes
+
+# CI / GitHub
+.github
+
+# Python artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node artifacts
+**/node_modules/
+**/.npm/
+**/yarn-error.log
+**/npm-debug.log
+
+# Bench build state
+sites/
+apps.txt
+apps.json
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Local environment / secrets
+.env
+.env.local
+*.local
+*.secret
+*.key
+*.pem
+secrets/
+
+# Logs
+*.log
+logs/
+
+# Bench dev state
+*.lock
+__installed__
+.pyc
+
+# Docker build secret file (rendered at build time)
+apps.json
