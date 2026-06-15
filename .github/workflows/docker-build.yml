@@ -115,9 +115,8 @@ jobs:
             CACHE_BUST=${{ github.sha }}
           secret-files: |
             apps_json=./apps.json
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+          cache-from: type=gha,scope=${{ github.ref_name }}-${{ github.run_number }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}-${{ github.run_number }}
       - name: Image summary
         run: |
           echo "Pushed tags:"
