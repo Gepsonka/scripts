@@ -43,6 +43,11 @@ jobs:
   build-and-push:
     name: Build and push production image
     runs-on: ubuntu-latest
+    # `bench init` + `bench build --production` against the full Frappe/ERPNext
+    # + custom apps tree can run for 25-35 minutes on a cold cache. Default
+    # GitHub Actions job timeout is 360 minutes, but we set it explicitly here
+    # for clarity and to make it easy to bump if needed.
+    timeout-minutes: 90
 
     steps:
       - name: Checkout scripts app

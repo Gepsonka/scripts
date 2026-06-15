@@ -3,25 +3,28 @@
 # Production Dockerfile for the scripts app on top of Frappe/ERPNext v16.
 #
 # Architecture:
-#   Stage 1 (builder) - based on `frappe/build`. Has Node + build tools pre-installed.
-#                       `bench init` with apps.json, then `bench setup requirements`,
-#                       then `bench build --production` to compile all assets
-#                       (frappe, erpnext, custom apps like scripts, posawesome).
-#   Stage 2 (runtime) - based on `frappe/base`. Lighter image without build tools.
-#                       Copies the prepared bench from builder, relocates assets
-#                       out of the sites volume so they stay in sync with the image.
+#   Stage 1 (bench-init) - based on `frappe/build`. Has Node, yarn, and Python
+#                          build tools pre-installed. Initializes the bench,
+#                          fetches all apps, installs Python/Node deps, and
+#                          builds production assets for ALL apps in one pass.
+#                          Uses BuildKit cache mounts for yarn/pip so
+#                          subsequent builds are much faster.
+#   Stage 2 (runtime)    - based on `frappe/base`. Lighter image without build
+#                          tools. Copies the prepared bench from stage 1,
+#                          relocates assets out of the sites volume so they
+#                          stay in sync with the image.
 #
-# Result: a self-contained image with production-built assets for both
-# upstream apps and custom apps. No `bench build` needed at runtime.
+# Result: a self-contained image with production-built assets for all
+# upstream apps and custom apps. No `bench build` at runtime.
 #
 
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_IMAGE_PREFIX=frappe
 
 # -----------------------------------------------------------------------------
-# Stage 1: builder (has Node, build tools, and Python pre-installed)
+# Stage 1: build everything (apps, deps, assets)
 # -----------------------------------------------------------------------------
-FROM ${FRAPPE_IMAGE_PREFIX}/build:${FRAPPE_BRANCH} AS builder
+FROM ${FRAPPE_IMAGE_PREFIX}/build:${FRAPPE_BRANCH} AS bench-init
 
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
@@ -29,8 +32,21 @@ ARG CACHE_BUST=""
 
 USER frappe
 
-# 1. Initialize bench and fetch all apps defined in apps.json (BuildKit secret)
+# Disable telemetry / upgrade nags during the build
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 1. Initialize the bench and fetch all apps from apps.json (BuildKit secret).
+#    `bench init --skip-assets` runs `bench get-app` for each app in apps.json
+#    (clones, pip-installs, and yarn-installs) but SKIPS the trailing
+#    `build_assets()` call that would do a dev-mode asset build. We do the
+#    production build ourselves in the next step, saving ~10 minutes.
+#
+#    BuildKit cache mounts let pip/yarn cache survive across builds, so
+#    subsequent builds don't re-download packages.
 RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \
+  --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
+  --mount=type=cache,target=/home/frappe/.npm,uid=1000,gid=1000 \
   : "${CACHE_BUST}" && \
   export APP_INSTALL_ARGS="" && \
   if [ -f /opt/frappe/apps.json ] && [ -s /opt/frappe/apps.json ]; then \
@@ -42,60 +58,52 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
     --no-procfile \
     --no-backups \
     --skip-redis-config-generation \
+    --skip-assets \
     --verbose \
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr
-
-WORKDIR /home/frappe/frappe-bench
-
-# 2. Install Python requirements for all apps.
-#    `bench get-app` (called by `bench init --apps_path`) already ran
-#    `pip install -e` for each app via its setup.py, but `setup requirements`
-#    ensures requirements.txt-based deps are also installed.
-RUN bench setup requirements --python && \
-  rm -rf /home/frappe/.cache /tmp/* /var/tmp/*
-
-# 3. Install Node dependencies for all apps and run production asset build.
-#    `bench build --production` compiles JS/CSS bundles for every installed app
-#    (frappe, erpnext, scripts, posawesome) and writes them to sites/assets.
-#    This is the critical step that was missing from the previous layered
-#    build - without it, custom app assets are absent in the runtime image.
-RUN bench setup requirements --node && \
+  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+  # Install app-specific requirements (apps may have requirements.txt with
+  # extra Python deps not in their setup.py).
+  bench setup requirements --python && \
+  # Install Node deps for all apps and run a single production build.
+  # `bench build --production` produces minified bundles without source maps.
+  bench setup requirements --node && \
   bench build --production && \
-  # Verify the critical asset directories exist (file names have hashes, so
-  # we just check the directories were populated)
+  # Sanity-check the critical asset directories were populated (file names
+  # are hashed, so we only check the directories exist). If `bench build`
+  # above fails, the RUN step aborts and the image never builds - this just
+  # makes the failure mode clearer.
   test -d sites/assets/frappe/dist/js || \
     (echo "ERROR: frappe assets not built" && exit 1) && \
   test -d sites/assets/erpnext/dist/js || \
     (echo "ERROR: erpnext assets not built" && exit 1) && \
   test -d sites/assets/scripts/js || \
     (echo "ERROR: scripts assets not built - custom app failed" && exit 1) && \
-  # Pre-compress the largest asset bundles to reduce served size
-  find sites/assets -name "*.bundle.js" -size +50k -exec gzip -k {} \; 2>/dev/null || true && \
-  # Drop build caches to reduce image size
-  rm -rf /home/frappe/.cache /home/frappe/.npm /home/frappe/.next /tmp/* /var/tmp/* \
+  # Drop transient caches we don't need in the runtime image.
+  rm -rf /tmp/* /var/tmp/* \
     apps/*/node_modules/.cache \
     apps/*/.cache
 
 # -----------------------------------------------------------------------------
-# Stage 2: runtime (lighter image without build tools)
+# Stage 2: runtime image (no build tools)
 # -----------------------------------------------------------------------------
 FROM ${FRAPPE_IMAGE_PREFIX}/base:${FRAPPE_BRANCH} AS runtime
 
 ARG FRAPPE_BRANCH=version-16
 ENV FRAPPE_BRANCH=${FRAPPE_BRANCH}
+ENV NEXT_TELEMETRY_DISABLED=1
 
 USER frappe
 
-# Copy the fully prepared bench (apps, env, built assets) from builder
-COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
+# Copy the fully prepared bench (apps, env, built assets) from stage 1
+COPY --from=bench-init --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
 
 WORKDIR /home/frappe/frappe-bench
 
-# Move assets out of the sites volume so the image owns them
-# and runtime-mounting the sites volume never serves stale assets.
+# Move assets out of the sites volume so the image owns them.
+# The entrypoint symlinks them back into the mounted sites volume at startup.
 RUN cp -r /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/assets && \
   rm -rf /home/frappe/frappe-bench/sites/assets
 
@@ -104,7 +112,8 @@ VOLUME [ \
   "/home/frappe/frappe-bench/logs" \
 ]
 
-# Entrypoint symlinks baked-in assets into the mounted sites volume.
+# Entrypoint: symlink baked-in assets into the mounted sites volume, then
+# exec the command (default: start.sh).
 USER root
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 755 /usr/local/bin/entrypoint.sh
