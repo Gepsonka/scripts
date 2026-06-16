@@ -4,18 +4,19 @@
 #
 # Architecture:
 #   Stage 1 (bench-init) - based on `frappe/build`. Has Node, yarn, and Python
-#                          build tools pre-installed. Initializes the bench,
-#                          fetches all apps, installs Python/Node deps, and
-#                          builds production assets for ALL apps in one pass.
-#                          Uses BuildKit cache mounts for yarn/pip so
-#                          subsequent builds are much faster.
+#                          build tools pre-installed. Initializes the bench
+#                          from apps.json (just erpnext as a dependency),
+#                          copies the scripts app from the build context,
+#                          installs Python/Node deps, and builds production
+#                          assets for erpnext. Uses BuildKit cache mounts for
+#                          yarn/pip so subsequent builds are much faster.
 #   Stage 2 (runtime)    - based on `frappe/base`. Lighter image without build
 #                          tools. Copies the prepared bench from stage 1,
 #                          relocates assets out of the sites volume so they
 #                          stay in sync with the image.
 #
-# Result: a self-contained image with production-built assets for all
-# upstream apps and custom apps. No `bench build` at runtime.
+# Result: a self-contained image with production-built assets for frappe,
+# erpnext and the scripts app. No `bench build` at runtime.
 #
 
 ARG FRAPPE_BRANCH=version-16
@@ -88,27 +89,45 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+  find apps -mindepth 1 -path "*/.git" | xargs rm -fr
+
+# Install the scripts app from the build context. apps.json only lists
+# erpnext as a dependency; the scripts app is shipped via the Docker
+# build context (this repo), not cloned from GitHub. This avoids the
+# "scripts clones itself" nesting pattern.
+COPY --chown=frappe:frappe pyproject.toml /home/frappe/frappe-bench/apps/scripts/pyproject.toml
+COPY --chown=frappe:frappe README.md /home/frappe/frappe-bench/apps/scripts/README.md
+COPY --chown=frappe:frappe license.txt /home/frappe/frappe-bench/apps/scripts/license.txt
+COPY --chown=frappe:frappe scripts /home/frappe/frappe-bench/apps/scripts/scripts
+RUN cd /home/frappe/frappe-bench && \
+  # Register the scripts app in apps.txt so `bench` and `frappe` know
+  # about it. `bench init` only wrote frappe + the apps from apps.json
+  # (erpnext), so we append scripts here.
+  echo "scripts" >> sites/apps.txt && \
+  # Link the scripts app's public/ directory into sites/assets/. This is
+  # what `bench init` would have done if the app were in apps.json; we
+  # replicate it here since the app is shipped via the build context.
+  mkdir -p sites/assets/scripts && \
+  ln -sfn /home/frappe/frappe-bench/apps/scripts/scripts/public/* sites/assets/scripts/ && \
   # Install app-specific requirements (apps may have requirements.txt with
   # extra Python deps not in their setup.py).
   bench setup requirements --python && \
   # Install Node deps for all apps and run a single production build.
   # `bench build --production` produces minified bundles without source maps.
   bench setup requirements --node && \
-  # Build JS/CSS assets for all apps. We use --app to limit the build to the
-  # apps that actually have JS bundles (skips the 'scripts' app which only
-  # has plain JS files served via app_include_js). The translation step in
-  # `bench build` uses a 4-worker multiprocessing.Pool which is fragile
-  # inside the docker build context (the pool forks 4 python processes,
-  # each loading the full frappe app, and intermittently OOMs or hits fork
-  # limits mid-erpnext - see commit history). We compile translations
-  # sequentially with babel below, which is reliable and fast (~2s).
-  bench build --production --app frappe --app erpnext --app posawesome && \
-  # Compile MO translation files sequentially using babel (the same library
-  # frappe.gettext uses internally, so the output is byte-identical to
-  # `bench build`'s multiprocessing.Pool path). Doing it here with a single
-  # worker avoids the 4-fork multiprocessing.Pool that intermittently OOMs
-  # or hits fork limits mid-erpnext inside the constrained docker build.
+  # Build JS/CSS assets. The apps.json in this repo only lists erpnext;
+  # the scripts app is provided by the build context (this repo) and
+  # is already installed by `bench init` above. We pass --app erpnext
+  # so `bench build` runs the esbuild step for the apps we actually
+  # ship (the scripts app has no JS bundles, only plain JS files served
+  # via app_include_js, so it doesn't need esbuild).
+  bench build --production --app erpnext && \
+  # Compile MO translation files sequentially using babel (the same
+  # library frappe.gettext uses internally, so the output is byte-
+  # identical to `bench build`'s multiprocessing.Pool path). Doing it
+  # here with a single worker avoids the 4-fork multiprocessing.Pool
+  # that intermittently OOMs or hits fork limits inside the
+  # constrained docker build context.
   ./env/bin/python -c "
 from babel.messages.mofile import write_mo
 from babel.messages.pofile import read_po
@@ -118,7 +137,7 @@ from frappe.utils import get_bench_path
 frappe.init('')
 from frappe.gettext.translate import get_locales
 total = 0
-for app in ('frappe', 'erpnext', 'posawesome', 'scripts'):
+for app in ('frappe', 'erpnext', 'scripts'):
     for locale in get_locales(app):
         po_path = Path(frappe.get_app_path(app)) / 'locale' / f'{locale}.po'
         mo_path = Path(get_bench_path()) / 'sites' / 'assets' / 'locale' / locale / 'LC_MESSAGES' / f'{app}.mo'
@@ -132,10 +151,10 @@ for app in ('frappe', 'erpnext', 'posawesome', 'scripts'):
         total += 1
 print(f'Compiled {total} translation files')
 " && \
-  # Sanity-check the critical asset directories were populated (file names
-  # are hashed, so we only check the directories exist). If `bench build`
-  # above fails, the RUN step aborts and the image never builds - this just
-  # makes the failure mode clearer.
+  # Sanity-check the critical asset directories were populated (file
+  # names are hashed, so we only check the directories exist). If
+  # `bench build` above fails, the RUN step aborts and the image never
+  # builds - this just makes the failure mode clearer.
   test -d sites/assets/frappe/dist/js || \
     (echo "ERROR: frappe assets not built" && exit 1) && \
   test -d sites/assets/erpnext/dist/js || \
