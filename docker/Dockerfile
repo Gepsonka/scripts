@@ -102,6 +102,7 @@ COPY --chown=frappe:frappe scripts /home/frappe/frappe-bench/apps/scripts/script
 # Translation compiler (see header in file for rationale)
 COPY --chown=frappe:frappe docker/compile-translations.py /home/frappe/compile-translations.py
 RUN cd /home/frappe/frappe-bench && \
+  set -x && \
   # Register the scripts app in apps.txt so `bench` and `frappe` know
   # about it. `bench init` only wrote frappe + the apps from apps.json
   # (erpnext), so we append scripts here.
@@ -117,46 +118,51 @@ RUN cd /home/frappe/frappe-bench && \
   # Install Node deps for all apps and run a single production build.
   # `bench setup requirements --node` runs `yarn install` (or `yarn`).
   bench setup requirements --node && \
-  # Build JS/CSS assets for frappe and erpnext. We invoke esbuild directly
-  # (`yarn run production --apps frappe,erpnext`) rather than going through
-  # `bench build --production`, because the bench build command also runs
-  # `frappe.gettext.translate.compile_translations` for every selected app
-  # via a 4-worker `multiprocessing.Pool` that intermittently OOMs or
-  # hits fork limits inside the constrained docker build context. The
-  # downstream `compile-translations.py` step below compiles all MO files
-  # sequentially (single process) using the same babel library, so the
-  # output is byte-identical to what bench build would have produced.
+  # Build JS/CSS assets for frappe and erpnext via `bench build`. This
+  # internally:
+  #   1. Calls `frappe.build.bundle` which sets up the assets directory
+  #      symlinks (sites/assets/{frappe,erpnext} -> apps/{app}/{app}/public)
+  #      and the dist/{js,css,css-rtl} subdirs.
+  #   2. Runs `yarn run production --apps frappe,erpnext` from
+  #      apps/frappe/, which invokes the esbuild script in apps/frappe/esbuild
+  #      to compile the JS/CSS bundles into sites/assets/{app}/dist/.
+  #   3. Calls `frappe.gettext.translate.compile_translations` for each
+  #      selected app via a 4-worker `multiprocessing.Pool`. This step
+  #      was the source of the previous intermittent CI failures (OOM
+  #      or fork limits inside the constrained docker build context).
+  #      Because we invoke our own `compile-translations.py` step below
+  #      (which overwrites every .mo file with a byte-identical babel
+  #      output), the pool's work here is wasted but harmless: the
+  #      compile_translations() call is idempotent and a no-op when
+  #      the .mo is up to date, so the pool forks 4 workers that
+  #      each return immediately. The single-process babel loop below
+  #      is the canonical source of truth for the .mo files shipped
+  #      in the image.
   #
-  # We also use the *plural* `--apps` flag (comma-separated) and pass
-  # both frappe and erpnext because:
+  # We pass `--apps frappe,erpnext` (plural, comma-separated) because:
   #
-  #   1. The `frappe` app is shipped in the image and the runtime
-  #      (`frappe/public/dist/js/*.js`) needs to exist; without building
-  #      frappe assets, the sanity-check `test -d
-  #      sites/assets/frappe/dist/js` at the bottom of this RUN fails.
+  #   - `--app X --app Y` (singular, repeated) does not work as expected:
+  #     Click collapses repeated options to the last value, so only the
+  #     last `--app` is honored.
   #
-  #   2. `bench build --app X --app Y` (the singular flag, repeated) does
-  #      NOT work as expected: Click collapses repeated options to the
-  #      last value, so the resulting esbuild invocation only builds
-  #      erpnext. The plural `--apps frappe,erpnext` is the supported
-  #      way to build multiple apps.
+  #   - We need frappe assets built so the sanity-check
+  #     `test -d sites/assets/frappe/dist/js` below passes. The previous
+  #     `--app erpnext`-only invocation skipped frappe entirely.
   #
   # The scripts app is intentionally excluded: it has no JS bundles
   # (only plain JS files served via `app_include_js`) and is symlinked
   # into sites/assets/scripts/ by the step above, so it doesn't need
   # esbuild.
-  cd /home/frappe/frappe-bench/apps/frappe && \
-    yarn run production --apps frappe,erpnext && \
-  cd /home/frappe/frappe-bench && \
+  bench build --production --apps frappe,erpnext && \
   # Compile MO translation files sequentially using babel (the same
   # library frappe.gettext uses internally, so the output is byte-
-  # identical to `bench build`'s multiprocessing.Pool path). Doing it
-  # here with a single worker avoids the 4-fork multiprocessing.Pool
-  # that intermittently OOMs or hits fork limits inside the
-  # constrained docker build context. The script lives in
-  # docker/compile-translations.py (extracted to a file because
-  # multi-line python -c strings break Dockerfile line-continuation;
-  # it is cwd-agnostic and resolves sites_path from get_bench_path()).
+  # identical to `bench build`'s multiprocessing.Pool path). This
+  # overwrites whatever the pool above produced and is the canonical
+  # source of truth for the .mo files in the image. The script is
+  # cwd-agnostic (it resolves sites_path from get_bench_path()) and
+  # lives in docker/compile-translations.py (extracted to a file
+  # because multi-line python -c strings break Dockerfile line-
+  # continuation).
   ./env/bin/python /home/frappe/compile-translations.py && \
   # Sanity-check the critical asset directories were populated (file
   # names are hashed, so we only check the directories exist). If
