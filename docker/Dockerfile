@@ -99,6 +99,8 @@ COPY --chown=frappe:frappe pyproject.toml /home/frappe/frappe-bench/apps/scripts
 COPY --chown=frappe:frappe README.md /home/frappe/frappe-bench/apps/scripts/README.md
 COPY --chown=frappe:frappe license.txt /home/frappe/frappe-bench/apps/scripts/license.txt
 COPY --chown=frappe:frappe scripts /home/frappe/frappe-bench/apps/scripts/scripts
+# Translation compiler (see header in file for rationale)
+COPY --chown=frappe:frappe docker/compile-translations.py /home/frappe/compile-translations.py
 RUN cd /home/frappe/frappe-bench && \
   # Register the scripts app in apps.txt so `bench` and `frappe` know
   # about it. `bench init` only wrote frappe + the apps from apps.json
@@ -127,30 +129,10 @@ RUN cd /home/frappe/frappe-bench && \
   # identical to `bench build`'s multiprocessing.Pool path). Doing it
   # here with a single worker avoids the 4-fork multiprocessing.Pool
   # that intermittently OOMs or hits fork limits inside the
-  # constrained docker build context.
-  ./env/bin/python -c "
-from babel.messages.mofile import write_mo
-from babel.messages.pofile import read_po
-from pathlib import Path
-import frappe
-from frappe.utils import get_bench_path
-frappe.init('')
-from frappe.gettext.translate import get_locales
-total = 0
-for app in ('frappe', 'erpnext', 'scripts'):
-    for locale in get_locales(app):
-        po_path = Path(frappe.get_app_path(app)) / 'locale' / f'{locale}.po'
-        mo_path = Path(get_bench_path()) / 'sites' / 'assets' / 'locale' / locale / 'LC_MESSAGES' / f'{app}.mo'
-        if not po_path.exists():
-            continue
-        mo_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(po_path, 'rb') as f:
-            catalog = read_po(f)
-        with open(mo_path, 'wb') as f:
-            write_mo(f, catalog)
-        total += 1
-print(f'Compiled {total} translation files')
-" && \
+  # constrained docker build context. The script lives in
+  # docker/compile-translations.py (extracted to a file because
+  # multi-line python -c strings break Dockerfile line-continuation).
+  ./env/bin/python /home/frappe/compile-translations.py && \
   # Sanity-check the critical asset directories were populated (file
   # names are hashed, so we only check the directories exist). If
   # `bench build` above fails, the RUN step aborts and the image never
