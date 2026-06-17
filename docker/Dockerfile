@@ -106,6 +106,16 @@ RUN cd /home/frappe/frappe-bench && \
   # Register the scripts app in apps.txt so `bench` and `frappe` know
   # about it. `bench init` only wrote frappe + the apps from apps.json
   # (erpnext), so we append scripts here.
+  #
+  # IMPORTANT: bench init writes `frappe\nerpnext` to sites/apps.txt
+  # WITHOUT a trailing newline. A naive `echo "scripts" >> sites/apps.txt`
+  # concatenates `scripts` directly to `erpnext`, producing
+  # `frappe\nerpnextscripts\n`. When `frappe.get_all_apps()` reads that
+  # file with `read().split('\n')`, it parses `erpnextscripts` as a
+  # single app name, and the subsequent `frappe.init()` call fails with
+  # `ModuleNotFoundError: No module named 'erpnextscripts'`. Ensure
+  # the file ends with a newline before appending.
+  [ "$(tail -c1 sites/apps.txt | wc -l)" = "0" ] && echo "" >> sites/apps.txt; \
   echo "scripts" >> sites/apps.txt && \
   # Link the scripts app's public/ directory into sites/assets/. This is
   # what `bench init` would have done if the app were in apps.json; we
