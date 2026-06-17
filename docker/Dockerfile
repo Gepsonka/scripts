@@ -62,31 +62,31 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
   : "${CACHE_BUST}" && \
   export APP_INSTALL_ARGS="" && \
   if [ -f /opt/frappe/apps.json ] && [ -s /opt/frappe/apps.json ]; then \
-    # Quick sanity check: file must be valid JSON containing at least one app. \
-    if python3 -c "import json,sys; data=json.load(open('/opt/frappe/apps.json')); assert isinstance(data, list) and len(data) > 0" 2>/dev/null; then \
-      export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
-      echo "Installing apps from /opt/frappe/apps.json (secret mount):"; \
-      cat /opt/frappe/apps.json; \
-    else \
-      echo "WARNING: /opt/frappe/apps.json exists but is not valid JSON - falling back to no custom apps"; \
-    fi; \
+  # Quick sanity check: file must be valid JSON containing at least one app. \
+  if python3 -c "import json,sys; data=json.load(open('/opt/frappe/apps.json')); assert isinstance(data, list) and len(data) > 0" 2>/dev/null; then \
+  export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
+  echo "Installing apps from /opt/frappe/apps.json (secret mount):"; \
+  cat /opt/frappe/apps.json; \
   else \
-    echo "No /opt/frappe/apps.json secret - bench init will only install frappe"; \
+  echo "WARNING: /opt/frappe/apps.json exists but is not valid JSON - falling back to no custom apps"; \
+  fi; \
+  else \
+  echo "No /opt/frappe/apps.json secret - bench init will only install frappe"; \
   fi && \
   # Make sure the build starts from a clean state. A cached previous run may
   # have partially populated /home/frappe/frappe-bench, which would cause
   # `bench init` to prompt interactively on subsequent app installs.
   rm -rf /home/frappe/frappe-bench && \
   bench init ${APP_INSTALL_ARGS}\
-    --frappe-branch=${FRAPPE_BRANCH} \
-    --frappe-path=${FRAPPE_PATH} \
-    --no-procfile \
-    --no-backups \
-    --skip-redis-config-generation \
-    --skip-assets \
-    --ignore-exist \
-    --verbose \
-    /home/frappe/frappe-bench && \
+  --frappe-branch=${FRAPPE_BRANCH} \
+  --frappe-path=${FRAPPE_PATH} \
+  --no-procfile \
+  --no-backups \
+  --skip-redis-config-generation \
+  --skip-assets \
+  --ignore-exist \
+  --verbose \
+  /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
   find apps -mindepth 1 -path "*/.git" | xargs rm -fr
@@ -179,15 +179,29 @@ RUN cd /home/frappe/frappe-bench && \
   # `bench build` above fails, the RUN step aborts and the image never
   # builds - this just makes the failure mode clearer.
   test -d sites/assets/frappe/dist/js || \
-    (echo "ERROR: frappe assets not built" && exit 1) && \
+  (echo "ERROR: frappe assets not built" && exit 1) && \
   test -d sites/assets/erpnext/dist/js || \
-    (echo "ERROR: erpnext assets not built" && exit 1) && \
+  (echo "ERROR: erpnext assets not built" && exit 1) && \
   test -d sites/assets/scripts/js || \
-    (echo "ERROR: scripts assets not built - custom app failed" && exit 1) && \
-  # Drop transient caches we don't need in the runtime image.
-  rm -rf /tmp/* /var/tmp/* \
-    apps/*/node_modules/.cache \
-    apps/*/.cache
+  (echo "ERROR: scripts assets not built - custom app failed" && exit 1)
+
+# Drop transient caches we don't need in the runtime image.
+# Must run as root because:
+#   - /tmp is mode 1777 (sticky) on Debian/Ubuntu. Only the file owner or
+#     root can delete a file in a sticky dir. The previous RUN ran as
+#     `frappe` (uid 1000), so /tmp/node-compile-cache/v24.12.0-.../* files
+#     created by Node are owned by frappe and root-owned files there can't
+#     be removed by the next `rm -rf /tmp/*` invoked as frappe. The build
+#     was failing with "rm: cannot remove '/tmp/node-compile-cache/...':
+#     Permission denied" right at the end of the bench-init stage even
+#     though the actual asset build had succeeded.
+#   - apps/*/node_modules/.cache and apps/*/.cache contain files written by
+#     various uids during the build, so the same issue applies.
+USER root
+RUN rm -rf /tmp/* /var/tmp/* \
+  apps/*/node_modules/.cache \
+  apps/*/.cache
+USER frappe
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime image (no build tools)
@@ -213,7 +227,7 @@ RUN cp -r /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/asset
 VOLUME [ \
   "/home/frappe/frappe-bench/sites", \
   "/home/frappe/frappe-bench/logs" \
-]
+  ]
 
 # Entrypoint: symlink baked-in assets into the mounted sites volume, then
 # exec the command (default: start.sh).
