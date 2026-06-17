@@ -115,15 +115,39 @@ RUN cd /home/frappe/frappe-bench && \
   # extra Python deps not in their setup.py).
   bench setup requirements --python && \
   # Install Node deps for all apps and run a single production build.
-  # `bench build --production` produces minified bundles without source maps.
+  # `bench setup requirements --node` runs `yarn install` (or `yarn`).
   bench setup requirements --node && \
-  # Build JS/CSS assets. The apps.json in this repo only lists erpnext;
-  # the scripts app is provided by the build context (this repo) and
-  # is already installed by `bench init` above. We pass --app erpnext
-  # so `bench build` runs the esbuild step for the apps we actually
-  # ship (the scripts app has no JS bundles, only plain JS files served
-  # via app_include_js, so it doesn't need esbuild).
-  bench build --production --app erpnext && \
+  # Build JS/CSS assets for frappe and erpnext. We invoke esbuild directly
+  # (`yarn run production --apps frappe,erpnext`) rather than going through
+  # `bench build --production`, because the bench build command also runs
+  # `frappe.gettext.translate.compile_translations` for every selected app
+  # via a 4-worker `multiprocessing.Pool` that intermittently OOMs or
+  # hits fork limits inside the constrained docker build context. The
+  # downstream `compile-translations.py` step below compiles all MO files
+  # sequentially (single process) using the same babel library, so the
+  # output is byte-identical to what bench build would have produced.
+  #
+  # We also use the *plural* `--apps` flag (comma-separated) and pass
+  # both frappe and erpnext because:
+  #
+  #   1. The `frappe` app is shipped in the image and the runtime
+  #      (`frappe/public/dist/js/*.js`) needs to exist; without building
+  #      frappe assets, the sanity-check `test -d
+  #      sites/assets/frappe/dist/js` at the bottom of this RUN fails.
+  #
+  #   2. `bench build --app X --app Y` (the singular flag, repeated) does
+  #      NOT work as expected: Click collapses repeated options to the
+  #      last value, so the resulting esbuild invocation only builds
+  #      erpnext. The plural `--apps frappe,erpnext` is the supported
+  #      way to build multiple apps.
+  #
+  # The scripts app is intentionally excluded: it has no JS bundles
+  # (only plain JS files served via `app_include_js`) and is symlinked
+  # into sites/assets/scripts/ by the step above, so it doesn't need
+  # esbuild.
+  cd /home/frappe/frappe-bench/apps/frappe && \
+    yarn run production --apps frappe,erpnext && \
+  cd /home/frappe/frappe-bench && \
   # Compile MO translation files sequentially using babel (the same
   # library frappe.gettext uses internally, so the output is byte-
   # identical to `bench build`'s multiprocessing.Pool path). Doing it
@@ -131,7 +155,8 @@ RUN cd /home/frappe/frappe-bench && \
   # that intermittently OOMs or hits fork limits inside the
   # constrained docker build context. The script lives in
   # docker/compile-translations.py (extracted to a file because
-  # multi-line python -c strings break Dockerfile line-continuation).
+  # multi-line python -c strings break Dockerfile line-continuation;
+  # it is cwd-agnostic and resolves sites_path from get_bench_path()).
   ./env/bin/python /home/frappe/compile-translations.py && \
   # Sanity-check the critical asset directories were populated (file
   # names are hashed, so we only check the directories exist). If

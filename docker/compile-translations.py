@@ -19,7 +19,14 @@ from frappe.gettext.translate import get_locales
 
 
 def main() -> int:
-    frappe.init("")
+    # Explicitly point frappe.init at the bench's sites/ directory.
+    # `frappe.init("")` defaults `sites_path="."` (relative to the process
+    # CWD), which only works if we happen to be in `<bench>/sites/`. In the
+    # Dockerfile we run from `<bench>/`, so we resolve sites_path from
+    # get_bench_path() to keep this script cwd-agnostic.
+    bench_path = Path(get_bench_path())
+    sites_path = str(bench_path / "sites")
+    frappe.init("", sites_path=sites_path)
     total = 0
     for app in ("frappe", "erpnext", "scripts"):
         for locale in get_locales(app):
