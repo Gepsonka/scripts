@@ -122,7 +122,18 @@ jinja = {
 fixtures = [
 	{
 		"doctype": "Client Script",
-		"filters": [["dt", "in", ["Item", "Item Price"]]],
+		"filters": [[
+			"dt", "in", [
+				"Item",
+				"Item Price",
+				"BOM",
+				"Sales Order",
+				"Sales Order Item",
+				"Project",
+				"Work Order",
+				"Work Order Item",
+			]
+		]],
 	},
 	{
 		"doctype": "Custom Field",
@@ -161,17 +172,33 @@ doc_events = {
 	# "Batch": {
 	# 	"after_insert": "scripts.scripts.fabric_length_propagation.propagate_fabric_length"
 	# },
-  "Purchase Receipt": {
-    "on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length"
+	"Purchase Receipt": {
+		"on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length"
 	},
-  # "Sales Order": {
+	# "Sales Order": {
 	# 	"on_submit": "scripts.scripts.propagate_chosen_fabric.propagate_chosen_fabric"
 	# },
-  "Work Order": {
-    "on_submit": "scripts.scripts.work_order_scripts.main_scripts.on_submit",
-    "before_save": "scripts.scripts.work_order_scripts.main_scripts.on_save",
-    "before_validate": "scripts.scripts.work_order_scripts.main_scripts.before_validate" 
-  }
+	"Sales Order": {
+		# Item-defaults population (item_name / stock_uom / uom /
+		# conversion_factor on each row) used to live on a SalesOrder
+		# subclass in scripts.doctype.sales_order. It is now a doc_event.
+		"validate": "scripts.utils.so_validate.populate_item_defaults",
+	},
+	"Work Order": {
+		"on_submit": "scripts.scripts.work_order_scripts.main_scripts.on_submit",
+		"before_save": "scripts.scripts.work_order_scripts.main_scripts.on_save",
+		"before_validate": "scripts.scripts.work_order_scripts.main_scripts.before_validate",
+		# set_required_items / set_work_order_operations used to live on a
+		# WorkOrder subclass in scripts.doctype.work_order. They are now
+		# wired as a single validate handler.
+		"validate": "scripts.utils.wo_overrides.work_order_validate",
+	},
+	"BOM": {
+		# Custom naming (BOM-{item}-{finishing}-{hash} for Products group
+		# items) used to live on a BOM subclass in scripts.doctype.bom.
+		# It is now a before_naming doc_event.
+		"before_naming": "scripts.utils.bom_autoname.bom_autoname",
+	},
 }
 
 # Scheduled Tasks
@@ -270,32 +297,4 @@ doc_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
-# Fixtures
-# --------
-fixtures = [
-	{
-		"doctype": "Client Script",
-		"filters": [["dt", "in", ["Item", "Item Price"]]],
-	},
-	{
-		"doctype": "Custom Field",
-		"filters": [
-			["dt", "in", [
-				"Item",
-				"Item Price",
-				"Sales Order",
-				"Sales Order Item",
-				"Purchase Receipt",
-				"Purchase Receipt Item",
-			]],
-		],
-	},
-	{
-		"doctype": "Property Setter",
-		"filters": [
-			["doc_type", "in", ["Item", "Item Price"]],
-		],
-	},
-]
 
