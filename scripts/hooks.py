@@ -26,8 +26,21 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/scripts/css/scripts.css"
+#
+# We deliberately do NOT pin a hardcoded `?v=...` cache buster here.
+# A pinned version would silently keep browsers on the old file
+# whenever the JS source changes until the string is bumped by hand,
+# which is the most common reason "the new button is in the image but
+# does not show up in production" - the browser keeps loading the
+# old, pre-deploy cached copy.
+#
+# Instead, the Dockerfile (apps/scripts/docker/Dockerfile) `touch`es
+# every file under apps/scripts/scripts/public/ to the image build
+# time. Nginx then serves those files with a current `Last-Modified`
+# header, so browsers refetch automatically on the next page load
+# after a deploy (standard `If-Modified-Since` / 304 behaviour).
 app_include_js = [
-	"/assets/scripts/js/qz_utils.js?v=dab3c901",
+	"/assets/scripts/js/qz_utils.js",
 	"/assets/scripts/js/bin_list.js",
 ]
 

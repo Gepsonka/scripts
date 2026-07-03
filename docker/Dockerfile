@@ -117,9 +117,27 @@ RUN cd /home/frappe/frappe-bench && \
   # the file ends with a newline before appending.
   [ "$(tail -c1 sites/apps.txt | wc -l)" = "0" ] && echo "" >> sites/apps.txt; \
   echo "scripts" >> sites/apps.txt && \
-  # Link the scripts app's public/ directory into sites/assets/. This is
-  # what `bench init` would have done if the app were in apps.json; we
-  # replicate it here since the app is shipped via the build context.
+  # Touch every file under apps/scripts/scripts/public/ to the current
+  # build time so Nginx serves them with a current Last-Modified
+  # header. Without this, the COPY inherits the source mtime, every
+  # deploy has identical timestamps, and browsers happily keep using
+  # the previously cached copy of, say, qz_utils.js or bin_list.js
+  # after a deploy - which is the most common cause of "the new
+  # button is in the image but does not show up in production".
+  #
+  # We deliberately do NOT pin a hardcoded ?v=... cache buster in
+  # hooks.py; see the comment next to app_include_js there for the
+  # full rationale.
+  find /home/frappe/frappe-bench/apps/scripts/scripts/public -type f -exec touch {} + && \
+  # Link the scripts app's public/ directory into sites/assets/. This
+  # is what `bench init` would have done if the app were in apps.json;
+  # we replicate it here since the app is shipped via the build context.
+  #
+  # `bench build` below will call `frappe.build.make_asset_dirs()`,
+  # which replaces this directory (or symlink) wholesale. That's
+  # fine - the symlink we create here is the same target
+  # (`apps/scripts/scripts/public`) that make_asset_dirs sets up,
+  # so the end state is identical either way.
   mkdir -p sites/assets/scripts && \
   ln -sfn /home/frappe/frappe-bench/apps/scripts/scripts/public/* sites/assets/scripts/ && \
   # Install app-specific requirements (apps may have requirements.txt with
