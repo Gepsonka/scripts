@@ -61,7 +61,7 @@ app_include_js = [
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {"Item": "public/js/item.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -186,7 +186,8 @@ doc_events = {
 	# 	"after_insert": "scripts.scripts.fabric_length_propagation.propagate_fabric_length"
 	# },
 	"Purchase Receipt": {
-		"on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length"
+		"on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length",
+		"on_cancel": "scripts.utils.pr_cancel_reset_barcode.reset_printed_qty_on_cancel",
 	},
 	# "Sales Order": {
 	# 	"on_submit": "scripts.scripts.propagate_chosen_fabric.propagate_chosen_fabric"
@@ -205,6 +206,8 @@ doc_events = {
 		# WorkOrder subclass in scripts.doctype.work_order. They are now
 		# wired as a single validate handler.
 		"validate": "scripts.utils.wo_overrides.work_order_validate",
+	},
+	"Item": {
 	},
 	"BOM": {
 		# Custom naming (BOM-{item}-{finishing}-{hash} for Products group

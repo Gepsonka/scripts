@@ -156,46 +156,52 @@ window.QZBarcodeUtils = (function () {
       "^XA" +
       "^LH0,0" +                       // reset label-home offset
       "^PW480" +                       // label width  (60 mm = 480 dots)
-      "^LL280";                        // label length (35 mm = 280 dots)
+      "^LL240";                        // label length (30 mm = 240 dots at 203 DPI)
 
-    var currentY = 5;
-
-    // ── Item name (centered, top) ───────────────────────────────────
-    if (name) {
-      currentY = 2;
-      label +=
-        "^FO0," + currentY +
-        "^A0N,28,28" +
-        "^FB480,1,0,C,0" +
-        "^FD" + name + "^FS";
-    }
-
-    // ── Barcode (centered, 60% width) ─────────────────────────────────
-    var barcodeHeight = 60;
-    var barcodeY = 30;
-    var barcodeWidth = Math.floor(480 * 0.6); // 60% of label width = 288 dots
-    var barcodeMargin = Math.floor((480 - barcodeWidth) / 2); // center: 96 dots
-    label +=
-      "^FO" + barcodeMargin + "," + barcodeY +
-      "^BY3," + Math.floor(barcodeWidth / 6) +
-      "^BCN," + barcodeHeight + ",N,N" +
-      "^FD" + code + "^FS";
-
-    // ── Label info (centered below barcode) ───────────────────────
+    // ── Label info (centered, top, big font) ────────────────────
     if (info) {
       label +=
-        "^FO0," + (barcodeY + barcodeHeight + 4) +
-        "^A0N,22,22" +
+        "^FO0,2" +
+        "^A0N,32,32" +
         "^FB480,1,0,C,0" +
         "^FD" + info + "^FS";
     }
 
-    // ── Price (bottom-left) ────────────────────────────────────────
+    // ── Barcode (centered, no built-in HRI) ──────────────────────
+    var barcodeHeight = 65;
+    var barcodeY = info ? 36 : 2;
+    var barcodeWidth = Math.floor(480 * 0.66); // 66% of label width = 317 dots
+    var barcodeMargin = Math.floor((480 - barcodeWidth) / 2) + 11; // center + 11 right shift
+    label +=
+      "^FO" + barcodeMargin + "," + barcodeY +
+      "^BY2.5,3.0," + barcodeHeight +
+      "^BCN," + barcodeHeight + ",N,N,N,N" +
+      "^FD" + code + "^FS";
+
+    // ── Item code text (explicit, centered, below barcode) ───────
+    var codeY = barcodeY + barcodeHeight + 4;
+    label +=
+      "^FO0," + codeY +
+      "^A0N,24,24" +
+      "^FB480,1,0,C,0" +
+      "^FD" + code + "^FS";
+
+    // ── Item name (centered below item code, small font) ─────────
+    var nameY = codeY + 28;
+    if (name) {
+      label +=
+        "^FO0," + nameY +
+        "^A0N,24,24" +
+        "^FB480,1,0,C,0" +
+        "^FD" + name + "^FS";
+    }
+
+    // ── Price (bottom-left, a few points from edge) ──────────────
     if (priceText) {
       label +=
-        "^FO8,152" +
-        "^A0N,28,28" +
-        "^FB360,1,0,L,0" +
+        "^FO12,172" +
+        "^A0N,26,26" +
+        "^FB460,1,0,L,0" +
         "^FD" + priceText + "^FS";
     }
 
@@ -205,6 +211,114 @@ window.QZBarcodeUtils = (function () {
 
     return label;
   }
+
+
+  // // ── ZPL builder ─────────────────────────────────────────────────────────
+  // /**
+  //  * Build a ZPL II label string for a Zebra ZD220 at 203 DPI.
+  //  *
+  //  * Default media: 60 mm × 35 mm
+  //  *   ^PW480  → 480 dots wide   (60 mm × 8 dots/mm)
+  //  *   ^LL280  → 280 dots tall   (35 mm × 8 dots/mm)
+  //  *
+  //  * Label layout (203 DPI, 60 mm × 35 mm):
+  //  *   Item name   → centered, font 28×28
+  //  *   Barcode     → Code 128, 60 dots tall, HRI below
+  // *   Item code   → native ^BC interpretation line (HRI) below barcode
+  //  *   Price       → bottom-left, font 22×22
+  //  *   Label info  → below item code, centered, font 22×22, translatable via translations[language + "_info"]
+  //  *
+  //  * @param {string} itemCode    Any non-empty string (ZPL control chars ^ and ~ are stripped).
+  //  * @param {number} qty         Number of copies (uses ^PQ).
+  //  * @param {string} [itemName]  Optional item name to print above the barcode.
+  //  * @param {number|string} [price]    Optional price value.
+  //  * @param {string} [currency]  Currency code: "RON", "HUF", or "EUR".
+  //  * @param {string} [labelInfo] Optional label info (style/size/colour) printed below price.
+  //  * @returns {string}           ZPL label string.
+  //  * @throws {Error}            If itemCode is empty after sanitisation.
+  //  */
+  // function buildZPL(itemCode, qty, itemName, price, currency, labelInfo, translations, language) {
+  //   qty = Math.max(1, Math.floor(qty) || 1);
+  //   var code = String(itemCode).replace(/[\^~]/g, "").trim();
+
+  //   // Resolve item name: try translation, then original, then item code
+  //   var name = itemName ? String(itemName).replace(/[\^~]/g, "").trim() : "";
+  //   if (translations && language && translations[language]) {
+  //     name = translations[language].replace(/[\^~]/g, "").trim();
+  //   }
+  //   if (!name) {
+  //     name = code;
+  //   }
+
+  //   // Resolve label info: try translation, then original
+  //   var info = labelInfo ? String(labelInfo).replace(/[\^~]/g, "").trim() : "";
+  //   if (translations && language && translations.label_info && translations.label_info[language]) {
+  //     info = String(translations.label_info[language]).replace(/[\^~]/g, "").trim();
+  //   }
+
+  //   // ── Format price string ───────────────────────────────────────────
+  //   var priceText = "";
+  //   if (price !== null && price !== undefined && price !== "") {
+  //     var numPrice = parseFloat(price);
+  //     if (!isNaN(numPrice)) {
+  //       var parts = numPrice.toFixed(2).split(".");
+  //       parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  //       priceText = parts.join(".") + (currency ? " " + currency : "");
+  //     }
+  //   }
+
+  //   var label =
+  //     "^XA" +
+  //     "^LH0,0" +                       // reset label-home offset
+  //     "^PW480" +                       // label width  (60 mm = 480 dots)
+  //     "^LL280";                        // label length (35 mm = 280 dots)
+
+  //   // ── Item name (centered, top) ───────────────────────────────────
+  //   if (name) {
+  //     var currentY = 0;
+  //     label +=
+  //       "^FO0," + currentY +
+  //       "^A0N,28,28" +
+  //       "^FB480,1,0,C,0" +
+  //       "^FD" + name + "^FS";
+  //   }
+
+  //   // ── Barcode (centered, 60% width) ─────────────────────────────────
+  //   var barcodeHeight = 135;
+  //   var barcodeY = 24;
+  //   var barcodeWidth = Math.floor(480 * 0.6); // 60% of label width = 288 dots
+  //   var barcodeMargin = Math.floor((480 - barcodeWidth) / 2); // center: 96 dots
+  //   label +=
+  //     "^FO" + barcodeMargin + "," + barcodeY +
+  //     "^BY3,3.0," + barcodeHeight +
+  //     "^BCN," + barcodeHeight + ",Y,N" +
+  //     "^FD" + code + "^FS";
+
+  //   // ── Label info (centered; placed clear of ^BC HRI text) ───────
+  //   if (info) {
+  //     var infoY = barcodeY + barcodeHeight + 34;
+  //     label +=
+  //       "^FO0," + infoY +
+  //       "^A0N,22,22" +
+  //       "^FB480,1,0,C,0" +
+  //       "^FD" + info + "^FS";
+  //   }
+
+  //   // ── Price (bottom-left) ────────────────────────────────────────
+  //   if (priceText) {
+  //     label +=
+  //       "^FO0,256" +
+  //       "^A0N,24,24" +
+  //       "^FB460,1,0,L,0" +
+  //       "^FD" + priceText + "^FS";
+  //   }
+
+  //   label +=
+  //     "^PQ" + qty +
+  //     "^XZ";
+
+  //   return label;
+  // }
 
   // ── Config factory ───────────────────────────────────────────────────────
   /**

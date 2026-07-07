@@ -79,6 +79,33 @@ function _fetchItemPrice(item_code, price_list, dialog) {
   });
 }
 
+function _isFreshQZUtils() {
+  if (!window.QZBarcodeUtils || typeof window.QZBarcodeUtils.buildZPL !== "function") {
+    return false;
+  }
+
+  var src = window.QZBarcodeUtils.buildZPL.toString();
+  return (
+    src.indexOf("var barcodeHeight = 46;") !== -1
+    && src.indexOf("hasPrice ? 98 : (barcodeY + barcodeHeight + 34)") !== -1
+  );
+}
+
+function _reloadQZUtils() {
+  return new Promise(function (resolve, reject) {
+    var s = document.createElement("script");
+    s.src = "/assets/scripts/js/qz_utils.js?v=" + Date.now();
+    s.onload = function () { resolve(); };
+    s.onerror = function () { reject(new Error("Failed to reload qz_utils.js")); };
+    document.head.appendChild(s);
+  });
+}
+
+function _ensureFreshQZUtils() {
+  if (_isFreshQZUtils()) return Promise.resolve();
+  return _reloadQZUtils();
+}
+
 frappe.ui.form.on("Item", {
   refresh: function (frm) {
     frm.add_custom_button(__("Print Barcode"), function () {
@@ -172,6 +199,13 @@ frappe.ui.form.on("Item", {
                 default: defaultLang,
                 description: __("Item name will be translated to this language on the label."),
               },
+              {
+                label: __("Label Info"),
+                fieldname: "label_info",
+                fieldtype: "Data",
+                default: frm.doc.label_info || "",
+                description: __("Optional text printed under the barcode."),
+              },
               { fieldtype: "Section Break", label: __("Printer") },
               {
                 label: __("Printer Name"),
@@ -195,27 +229,36 @@ frappe.ui.form.on("Item", {
               _savePrinterSettings(values);
               d.hide();
 
+              var selectedPrice =
+                values.price !== null && values.price !== undefined && values.price !== ""
+                  ? values.price
+                  : null;
+              var selectedLabelInfo = values.label_info || frm.doc.label_info || null;
+
               // Use translated item name if available, otherwise fallback
               var translatedName = translationsMap[values.language] || frm.doc.item_name || "";
 
-              frappe.show_alert({
-                message: __("Sending {0} label(s) to printer...", [values.qty]),
-                indicator: "blue",
-              });
+              _ensureFreshQZUtils()
+                .then(function () {
+                  frappe.show_alert({
+                    message: __("Sending {0} label(s) to printer...", [values.qty]),
+                    indicator: "blue",
+                  });
 
-              QZBarcodeUtils.printBarcodes(
-                [{
-                  item_code: item_code,
-                  item_name: translatedName,
-                  qty: values.qty,
-                  price: values.price || null,
-                  currency: values.currency || "HUF",
-                  label_info: frm.doc.label_info || null,
-                }],
-                { printerName: values.printer_name },
-                { [item_code]: translationsMap },
-                values.language
-              )
+                  return QZBarcodeUtils.printBarcodes(
+                    [{
+                      item_code: item_code,
+                      item_name: translatedName,
+                      qty: values.qty,
+                      price: selectedPrice,
+                      currency: values.currency || "HUF",
+                      label_info: selectedLabelInfo,
+                    }],
+                    { printerName: values.printer_name },
+                    { [item_code]: translationsMap },
+                    values.language
+                  );
+                })
                 .then(function () {
                   frappe.show_alert({
                     message: __("{0} label(s) sent to printer.", [values.qty]),
