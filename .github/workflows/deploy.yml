@@ -101,7 +101,7 @@ jobs:
           kubectl wait --for=condition=complete job/frappe-migrator --namespace=default --timeout=900s
           kubectl logs job/frappe-migrator --namespace=default --tail=20
 
-      - name: Sync scripts app fixtures to DB
+      - name: Force-sync scripts app fixtures to DB
         run: |
           export KUBECONFIG=$PWD/kubeconfig
           kubectl apply -f - <<'K8S_YAML'
@@ -127,6 +127,12 @@ jobs:
                         from frappe.utils.fixtures import sync_fixtures
                         frappe.init(site='dev.localhost')
                         frappe.connect()
+                        # Force-delete stale Client Scripts so the fixture
+                        # import always writes fresh copies. Without this,
+                        # Frappe's timestamp comparison can skip the import
+                        # if the DB row has a newer modified time.
+                        frappe.db.delete('Client Script', {'name': 'Item-Print-Barcode'})
+                        frappe.db.commit()
                         sync_fixtures('scripts')
                         frappe.db.commit()
                         print('Scripts app fixtures synced successfully.')
