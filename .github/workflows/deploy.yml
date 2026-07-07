@@ -111,5 +111,14 @@ jobs:
           kubectl rollout status deployment/frappe-bench --namespace=default --timeout=600s
           echo "Rollout complete."
 
+      - name: Clear Frappe caches on all bench pods
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          for pod in $(kubectl get pods -l app=frappe-bench --namespace=default -o name); do
+            echo "Clearing cache on $pod..."
+            kubectl exec --namespace=default "$pod" -- bench clear-cache || true
+          done
+          echo "Cache cleared on all pods."
+
       - name: Cleanup kubeconfig
         run: rm -f kubeconfig
