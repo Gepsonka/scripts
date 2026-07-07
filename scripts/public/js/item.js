@@ -85,9 +85,10 @@ function _isFreshQZUtils() {
   }
 
   var src = window.QZBarcodeUtils.buildZPL.toString();
+  // Check for NEW code signatures — these only exist in the current version
   return (
-    src.indexOf("var barcodeHeight = 46;") !== -1
-    && src.indexOf("hasPrice ? 98 : (barcodeY + barcodeHeight + 34)") !== -1
+    src.indexOf("var barcodeHeight = 65;") !== -1
+    || src.indexOf('"^BCN," + barcodeHeight + ",N,N,N,N"') !== -1
   );
 }
 
