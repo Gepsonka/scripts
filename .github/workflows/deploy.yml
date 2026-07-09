@@ -46,72 +46,46 @@ jobs:
           echo "::add-mask::kubeconfig"
           chmod 644 kubeconfig
 
-      - name: Run database migrator
-        run: |
-          export KUBECONFIG=$PWD/kubeconfig
-          kubectl apply -f - <<'K8S_YAML'
-          apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: frappe-migrator
-            namespace: default
-          spec:
-            ttlSecondsAfterFinished: 600
-            activeDeadlineSeconds: 900
-            template:
-              spec:
-                restartPolicy: OnFailure
-                initContainers:
-                  - name: fix-custom-item
-                    image: $IMAGE_NAME:sha-${{ github.event.workflow_run.head_sha }}
-                    command: ["bench", "execute", "scripts.migrate.remove_custom_item_doctype", "--site", "dev.localhost"]
-                    env:
-                      - name: DATABASE_URL
-                        valueFrom:
-                          secretKeyRef:
-                            name: frappe-bench-db
-                            key: mariadb
-                      - name: SITES
-                        value: "dev.localhost"
-                containers:
-                  - name: migrator
-                    image: $IMAGE_NAME:sha-${{ github.event.workflow_run.head_sha }}
-                    command: ["bench", "--site", "all", "migrate"]
-                    env:
-                      - name: DATABASE_URL
-                        valueFrom:
-                          secretKeyRef:
-                            name: frappe-bench-db
-                            key: mariadb
-                      - name: SITES
-                        value: "dev.localhost"
-                    resources:
-                      requests:
-                        memory: "256Mi"
-                        cpu: "100m"
-                      limits:
-                        memory: "1Gi"
-                        cpu: "1000m"
-          K8S_YAML
-          echo "Migrator Job submitted."
-
-      - name: Wait for migrator to complete
-        run: |
-          export KUBECONFIG=$PWD/kubeconfig
-          kubectl wait --for=condition=complete job/frappe-migrator --namespace=default --timeout=900s
-          kubectl logs job/frappe-migrator --namespace=default --tail=20
-
+      # ───────────────────────────────────────────────────────────────
+      # 1. Rollout new pods FIRST.
+      #    The build workflow pushes multiple tags; we use the
+      #    build-number tag (build-NNN) which is stable and doesn't
+      #    depend on SHA format matching between workflows.
+      #    The pod mounts the persistent volume which has the correct
+      #    common_site_config.json.
+      # ───────────────────────────────────────────────────────────────
       - name: Rollout new bench Deployment
         run: |
           export KUBECONFIG=$PWD/kubeconfig
+          IMAGE_TAG=$IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          echo "Updating to image: $IMAGE_TAG"
           kubectl set image deployment/frappe-bench \
-            bench=$IMAGE_NAME:sha-${{ github.event.workflow_run.head_sha }} \
+            bench=$IMAGE_TAG \
             --namespace=default
           echo "Image updated. Waiting for rollout..."
           kubectl rollout status deployment/frappe-bench --namespace=default --timeout=600s
           echo "Rollout complete."
 
-      - name: Clear Frappe caches on all bench pods
+      # ───────────────────────────────────────────────────────────────
+      # 2. Run database migration INSIDE a running pod.
+      #    The pod already has the correct DB config from the mounted
+      #    volume, so `bench migrate` connects to the right database.
+      # ───────────────────────────────────────────────────────────────
+      - name: Run database migration
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          echo "Waiting for at least one bench pod to be ready..."
+          kubectl wait --for=condition=ready pod -l app=frappe-bench --namespace=default --timeout=120s
+          POD=$(kubectl get pods -l app=frappe-bench --namespace=default -o name | head -1)
+          echo "Running migration on $POD..."
+          kubectl exec --namespace=default "$POD" -- bench --site all migrate
+          echo "Database migration complete."
+
+      # ───────────────────────────────────────────────────────────────
+      # 3. Clear Frappe caches on all bench pods so the updated
+      #    schema metadata is picked up immediately.
+      # ───────────────────────────────────────────────────────────────
+      - name: Clear Frappe caches
         run: |
           export KUBECONFIG=$PWD/kubeconfig
           for pod in $(kubectl get pods -l app=frappe-bench --namespace=default -o name); do
