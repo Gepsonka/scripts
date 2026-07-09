@@ -1,6 +1,43 @@
 // Client script for the standard ERPNext Item doctype.
 // Adds a "Print Barcode" button that sends ZPL to the Zebra ZD220 via QZ Tray.
 
+(function () {
+  frappe.provide("erpnext.item");
+
+  if (erpnext.item._scripts_stock_dashboard_patch) {
+    return;
+  }
+
+  erpnext.item._scripts_stock_dashboard_patch = true;
+
+  erpnext.item.make_dashboard = function (frm) {
+    if (frm.doc.__islocal || !frm.doc.is_stock_item) return;
+
+    frappe.require("item-dashboard.bundle.js", function () {
+      var stockLevelsField = frm.fields_dict && frm.fields_dict.stock_levels_html;
+      var section = stockLevelsField && stockLevelsField.$wrapper;
+
+      if (section) {
+        section.empty();
+      } else if (frm.dashboard && typeof frm.dashboard.add_section === "function") {
+        section = frm.dashboard.add_section("", __("Stock Levels"));
+      } else {
+        console.warn("Item stock dashboard skipped: stock_levels_html field is missing.");
+        return;
+      }
+
+      erpnext.item.item_dashboard = new erpnext.stock.ItemDashboard({
+        parent: section,
+        item_code: frm.doc.name,
+        page_length: 20,
+        method: "erpnext.stock.dashboard.item_dashboard.get_data",
+        template: "item_dashboard_list",
+      });
+      erpnext.item.item_dashboard.refresh();
+    });
+  };
+})();
+
 var _QZ_SETTINGS_KEY = "qz_printer_settings";
 
 function _loadPrinterSettings() {
