@@ -150,6 +150,12 @@ frappe.query_reports["Barcode Labels"] = {
             label: __("Printer"),
             fieldtype: "Data",
             default: saved.printer_name || "",
+            description: __("Exact CUPS printer name. Leave blank to auto-detect Zebra."),
+          },
+          {
+            label: __("Detect Available Printers"),
+            fieldname: "detect_btn",
+            fieldtype: "Button",
           },
           { fieldtype: "Section Break", label: __("Language") },
           {
@@ -188,8 +194,11 @@ frappe.query_reports["Barcode Labels"] = {
           d.hide();
 
           function _doPrint(items, translations) {
-            frappe.show_alert({ message: __("Sending {0} label(s) to printer…", [items.length]), indicator: "blue" });
-            QZBarcodeUtils.printBarcodes(items, printer ? { printerName: printer } : {}, translations, language)
+            _ensureFreshQZUtils()
+              .then(function () {
+                frappe.show_alert({ message: __("Sending {0} label(s) to printer…", [items.length]), indicator: "blue" });
+                return QZBarcodeUtils.printBarcodes(items, printer ? { printerName: printer } : {}, translations, language);
+              })
               .then(function () {
                 frappe.show_alert({ message: __("{0} label(s) sent to printer.", [items.length]), indicator: "green" });
 
@@ -252,6 +261,10 @@ frappe.query_reports["Barcode Labels"] = {
         },
       });
 
+      d.get_field("detect_btn").$input.on("click", function () {
+        _showPrinterPicker(d.get_field("printer_name"));
+      });
+
       d.show();
 
       // Apply checked state via JS — unprinted rows checked by default
@@ -275,6 +288,87 @@ frappe.query_reports["Barcode Labels"] = {
       });
     });
 
+    // ── Shared helpers (same logic as the Item form Print Barcode button) ────
+    function _isFreshQZUtils() {
+      if (!window.QZBarcodeUtils || typeof window.QZBarcodeUtils.buildZPL !== "function") {
+        return false;
+      }
+      var src = window.QZBarcodeUtils.buildZPL.toString();
+      return (
+        src.indexOf("var barcodeHeight = 65;") !== -1
+        || src.indexOf('"^BCN," + barcodeHeight + ",N,N,N,N"') !== -1
+      );
+    }
+
+    function _reloadQZUtils() {
+      return new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = "/assets/scripts/js/qz_utils.js?v=" + Date.now();
+        s.onload = function () { resolve(); };
+        s.onerror = function () { reject(new Error("Failed to reload qz_utils.js")); };
+        document.head.appendChild(s);
+      });
+    }
+
+    function _ensureFreshQZUtils() {
+      if (_isFreshQZUtils()) return Promise.resolve();
+      return _reloadQZUtils();
+    }
+
+    function _showPrinterPicker(target_field) {
+      frappe.show_alert({ message: __("Connecting to QZ Tray..."), indicator: "blue" });
+      QZBarcodeUtils.listPrinters()
+        .then(function (printers) {
+          if (!Array.isArray(printers)) printers = [printers];
+          if (!printers.length) {
+            frappe.msgprint(__("No printers found via QZ Tray."));
+            return;
+          }
+          var picker = new frappe.ui.Dialog({
+            title: __("Select Printer"),
+            fields: [
+              {
+                label: __("Printer"),
+                fieldname: "chosen",
+                fieldtype: "Select",
+                options: printers.join("\n"),
+                default: printers[0],
+                reqd: 1,
+              },
+            ],
+            primary_action_label: __("Select"),
+            primary_action: function (vals) {
+              target_field.set_value(vals.chosen);
+              picker.hide();
+            },
+          });
+          picker.show();
+        })
+        .catch(function (err) {
+          frappe.msgprint({
+            title: __("QZ Tray Error"),
+            indicator: "red",
+            message: err.message || __("Could not connect to QZ Tray. Make sure it is running."),
+          });
+        });
+    }
+
+    function _fetchItemPrice(item_code, price_list, dialog) {
+      if (!price_list) return;
+      frappe.call({
+        method: "frappe.client.get_value",
+        args: {
+          doctype: "Item Price",
+          filters: { item_code: item_code, price_list: price_list },
+          fieldname: "price_list_rate",
+        },
+        callback: function (r) {
+          var rate = r.message && r.message.price_list_rate;
+          dialog.set_value("price", rate != null ? rate : "");
+        },
+      });
+    }
+
     // ── Event delegation: per-row Print button ────────────────────────────
     if (window._qzBarcodeRowHandler) {
       document.removeEventListener("click", window._qzBarcodeRowHandler, true);
@@ -288,107 +382,178 @@ frappe.query_reports["Barcode Labels"] = {
       var itemName = btn.getAttribute("data-name") || "";
       var warehouse = btn.getAttribute("data-warehouse");
       var wasPrinted = btn.getAttribute("data-printed") === "1";
+      var rowLabelInfo = btn.getAttribute("data-labelinfo") || "";
 
       var saved = _loadSettings();
-      var price_list = saved.price_list;
-      var currency = saved.currency || "HUF";
-      var language = saved.language || "hu";
+      var defaultPL = saved.price_list || (_priceLists.length ? _priceLists[0].name : "");
+      var defaultCurrency = saved.currency || _plCurrencyMap[defaultPL] || "HUF";
+      var defaultLang = saved.language || "hu";
 
-      // Show a mini-dialog to select currency and language before printing
+      // Same dialog as the Item form Print Barcode button
       var d = new frappe.ui.Dialog({
         title: __("Print Barcode Label"),
         fields: [
           {
-            fieldname: "price_list",
-            label: __("Price List"),
-            fieldtype: "Select",
-            options: "\n" + _plOptions,
-            default: price_list || "",
-            description: __("Leave blank to skip price on label."),
+            label: __("Item Code"),
+            fieldname: "item_code",
+            fieldtype: "Data",
+            read_only: 1,
+            default: itemCode,
           },
           {
-            fieldname: "currency",
+            label: __("Quantity"),
+            fieldname: "qty",
+            fieldtype: "Int",
+            default: 1,
+            reqd: 1,
+          },
+          { fieldtype: "Section Break", label: __("Price") },
+          {
+            label: __("Price List"),
+            fieldname: "price_list",
+            fieldtype: "Select",
+            options: _plOptions,
+            default: defaultPL,
+            onchange: function () {
+              var pl = d.get_value("price_list");
+              d.set_value("currency", _plCurrencyMap[pl] || "HUF");
+              _fetchItemPrice(itemCode, pl, d);
+            },
+          },
+          {
             label: __("Currency"),
+            fieldname: "currency",
             fieldtype: "Select",
             options: _allCurrencies.join("\n"),
-            default: currency,
+            default: defaultCurrency,
             reqd: 1,
           },
           {
-            fieldname: "language",
+            label: __("Price"),
+            fieldname: "price",
+            fieldtype: "Float",
+            description: __("Auto-fetched from the selected price list."),
+          },
+          { fieldtype: "Section Break", label: __("Language") },
+          {
             label: __("Label Language"),
+            fieldname: "language",
             fieldtype: "Select",
             options: "hu\nen\nde\nro\nfr\nit\nes",
-            default: language,
+            default: defaultLang,
             description: __("Item name will be translated to this language on the label."),
+          },
+          {
+            label: __("Label Info"),
+            fieldname: "label_info",
+            fieldtype: "Data",
+            default: rowLabelInfo,
+            description: __("Optional text printed under the barcode."),
           },
           { fieldtype: "Section Break", label: __("Printer") },
           {
+            label: __("Printer Name"),
             fieldname: "printer_name",
-            label: __("Printer"),
             fieldtype: "Data",
             default: saved.printer_name || "",
+            description: __("Exact CUPS printer name. Leave blank to auto-detect Zebra."),
+          },
+          {
+            label: __("Detect Available Printers"),
+            fieldname: "detect_btn",
+            fieldtype: "Button",
           },
         ],
         primary_action_label: __("Print"),
         primary_action: function (values) {
+          if (!values.qty || values.qty < 1) {
+            frappe.msgprint(__("Please enter a valid quantity (minimum 1)."));
+            return;
+          }
+          _saveSettings(values);
           d.hide();
-          _doPrintRow(btn, itemCode, itemName, warehouse, wasPrinted, values.currency, values.language, values.printer_name, values.price_list);
+
+          var selectedPrice =
+            values.price !== null && values.price !== undefined && values.price !== ""
+              ? values.price
+              : null;
+          var selectedLabelInfo = values.label_info || rowLabelInfo;
+
+          var translationsMap = {};
+
+          // Fetch translations for this item
+          frappe.call({
+            method: "scripts.api.get_item_translations",
+            args: { item_code: itemCode, languages: "hu,en,de,ro,fr,it,es" },
+            callback: function (r) {
+              translationsMap = r.message || {};
+              var translatedName = translationsMap[values.language] || itemName;
+
+              _ensureFreshQZUtils()
+                .then(function () {
+                  frappe.show_alert({
+                    message: __("Sending {0} label(s) to printer...", [values.qty]),
+                    indicator: "blue",
+                  });
+
+                  return QZBarcodeUtils.printBarcodes(
+                    [{
+                      item_code: itemCode,
+                      item_name: translatedName,
+                      qty: values.qty,
+                      price: selectedPrice,
+                      currency: values.currency || "HUF",
+                      label_info: selectedLabelInfo,
+                    }],
+                    { printerName: values.printer_name },
+                    { [itemCode]: translationsMap },
+                    values.language
+                  );
+                })
+                .then(function () {
+                  frappe.show_alert({
+                    message: __("{0} label(s) sent to printer.", [values.qty]),
+                    indicator: "green",
+                  });
+                  if (!wasPrinted) {
+                    frappe.call({
+                      method: "scripts.api.update_barcode_print_date",
+                      args: { items: JSON.stringify([{ item_code: itemCode, warehouse: warehouse, count: values.qty }]) },
+                      callback: function () { frappe.query_report.refresh(); },
+                    });
+                  } else {
+                    frappe.query_report.refresh();
+                  }
+                })
+                .catch(function (err) {
+                  frappe.msgprint({
+                    title: __("Print Error"),
+                    indicator: "red",
+                    message: err.message || __("Failed to print."),
+                  });
+                });
+            },
+          });
         },
       });
+
+      d.get_field("detect_btn").$input.on("click", function () {
+        _showPrinterPicker(d.get_field("printer_name"));
+      });
+
       d.show();
-    };
 
-    function _doPrintRow(btn, itemCode, itemName, warehouse, wasPrinted, currency, language, printer, priceList) {
-      function _print(price, translations) {
-        var labelInfo = btn.getAttribute("data-labelinfo") || "";
-        frappe.show_alert({ message: __("Printing label for {0}…", [itemCode]), indicator: "blue" });
-        // get_item_translations returns { lang: text }, but printBarcodes expects { item_code: { lang: text } }
-        var wrappedTrans = {};
-        wrappedTrans[itemCode] = translations || {};
-        QZBarcodeUtils.printBarcodes(
-          [{ item_code: itemCode, item_name: itemName, qty: 1, price: price || null, currency: currency, label_info: labelInfo }],
-          printer ? { printerName: printer } : {},
-          wrappedTrans,
-          language
-        )
-          .then(function () {
-            frappe.show_alert({ message: __("Label sent to printer."), indicator: "green" });
-            if (!wasPrinted) {
-              frappe.call({
-                method: "scripts.api.update_barcode_print_date",
-                args: { items: JSON.stringify([{ item_code: itemCode, warehouse: warehouse, count: 1 }]) },
-                callback: function () { frappe.query_report.refresh(); },
-              });
-            } else {
-              frappe.query_report.refresh();
-            }
-          })
-          .catch(function (err) {
-            frappe.msgprint({ title: __("Print Error"), indicator: "red", message: err.message || __("Failed to print. Please check that QZ Tray is running.") });
-          });
-      }
-
-      // Fetch translations first, then price if applicable
+      // Fetch translations for the default language (for preview)
       frappe.call({
         method: "scripts.api.get_item_translations",
         args: { item_code: itemCode, languages: "hu,en,de,ro,fr,it,es" },
-        callback: function (r) {
-          var translations = r.message || {};
-          if (priceList) {
-            frappe.call({
-              method: "frappe.client.get_value",
-              args: { doctype: "Item Price", filters: { item_code: itemCode, price_list: priceList }, fieldname: "price_list_rate" },
-              callback: function (r2) {
-                _print(r2.message && r2.message.price_list_rate, translations);
-              },
-            });
-          } else {
-            _print(null, translations);
-          }
-        },
+        callback: function () { },  // silently cache
       });
-    }
+
+      if (defaultPL) {
+        _fetchItemPrice(itemCode, defaultPL, d);
+      }
+    };
     document.addEventListener("click", window._qzBarcodeRowHandler, true);
   },
 };
