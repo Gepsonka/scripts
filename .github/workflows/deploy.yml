@@ -78,7 +78,7 @@ jobs:
           kubectl wait --for=condition=ready pod -l app=frappe-bench --namespace=default --timeout=120s
           POD=$(kubectl get pods -l app=frappe-bench --namespace=default -o name | head -1)
           echo "Running migration on $POD..."
-          kubectl exec --namespace=default "$POD" -- bench --site all migrate
+          kubectl exec --namespace=default "$POD" -- bench migrate
           echo "Database migration complete."
 
       # ───────────────────────────────────────────────────────────────
