@@ -4,27 +4,38 @@
 (function () {
   frappe.provide("erpnext.item");
 
-  if (erpnext.item._scripts_stock_dashboard_patch) {
+  if (erpnext.item._scripts_form_patch) {
     return;
   }
+  erpnext.item._scripts_form_patch = true;
 
-  erpnext.item._scripts_stock_dashboard_patch = true;
+  // Safely read a section from fields_dict, returning its $wrapper or null.
+  // This prevents the entire refresh handler chain from aborting with
+  // "TypeError: can't access property '$wrapper', ... is undefined"
+  // when a field (e.g. stock_levels_html, prices_html) is absent from
+  // the production site's Item doctype meta.
+  function _safe_section(frm, fieldname) {
+    var f = frm.fields_dict && frm.fields_dict[fieldname];
+    return f && f.$wrapper ? f.$wrapper : null;
+  }
 
+  // --- make_dashboard ---
   erpnext.item.make_dashboard = function (frm) {
     if (frm.doc.__islocal || !frm.doc.is_stock_item) return;
 
     frappe.require("item-dashboard.bundle.js", function () {
-      var stockLevelsField = frm.fields_dict && frm.fields_dict.stock_levels_html;
-      var section = stockLevelsField && stockLevelsField.$wrapper;
+      var section = _safe_section(frm, "stock_levels_html");
 
-      if (section) {
-        section.empty();
-      } else if (frm.dashboard && typeof frm.dashboard.add_section === "function") {
+      if (!section && frm.dashboard && typeof frm.dashboard.add_section === "function") {
         section = frm.dashboard.add_section("", __("Stock Levels"));
-      } else {
+      }
+
+      if (!section) {
         console.warn("Item stock dashboard skipped: stock_levels_html field is missing.");
         return;
       }
+
+      section.empty();
 
       erpnext.item.item_dashboard = new erpnext.stock.ItemDashboard({
         parent: section,
@@ -34,6 +45,69 @@
         template: "item_dashboard_list",
       });
       erpnext.item.item_dashboard.refresh();
+    });
+  };
+
+  // --- render_item_prices ---
+  erpnext.item.render_item_prices = function (frm) {
+    if (frm.doc.__islocal) return;
+
+    var container = _safe_section(frm, "prices_html");
+    if (!container) {
+      console.warn("Item prices section skipped: prices_html field is missing.");
+      return;
+    }
+
+    var requested_item = frm.doc.name;
+
+    container.html(
+      '<div class="text-muted text-center" style="padding: 20px;">' +
+      __("Loading...") +
+      "</div>"
+    );
+
+    frappe.call({
+      method: "erpnext.stock.doctype.item.item.get_item_prices",
+      args: { item_code: requested_item },
+      callback: function (r) {
+        if (requested_item !== frm.doc.name) return;
+        if (!r.message) return;
+
+        var data = r.message;
+        var html = frappe.render_template("item_prices", {
+          prices: data.prices,
+          has_more: data.has_more,
+          item_code: requested_item,
+          stock_uom: frm.doc.stock_uom,
+        });
+
+        container.html(html);
+
+        container.find(".add-price-btn").on("click", function () {
+          var filters = {};
+          if (frm.doc.is_sales_item && !frm.doc.is_purchase_item) {
+            filters.selling = 1;
+          } else if (frm.doc.is_purchase_item && !frm.doc.is_sales_item) {
+            filters.buying = 1;
+          }
+          frappe.new_doc(
+            "Item Price",
+            { item_code: requested_item, uom: frm.doc.stock_uom },
+            function (dialog) {
+              if (Object.keys(filters).length) {
+                dialog.fields_dict.price_list.get_query = function () {
+                  return { filters: filters };
+                };
+              }
+            }
+          );
+        });
+
+        container.find(".price-row").on("click", function (e) {
+          if ($(e.target).is("a")) return;
+          frappe.set_route("Form", "Item Price", $(this).data("name"));
+        });
+      },
     });
   };
 })();
