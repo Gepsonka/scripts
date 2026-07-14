@@ -245,10 +245,45 @@ function _buildDialog(frm, stockItems, saved, plOptions, plCurrencyMap, allCurre
               indicator: "blue",
             });
 
+            // Build swapped items + translations for Stock Entry layout:
+            //   - item_name at top (big 32×32 font)  ← via label_info field
+            //   - label_info below barcode (24×24)    ← via item_name field
+            var stockSelected = selected.map(function (item) {
+              return {
+                item_code: item.item_code,
+                item_name: item.label_info || "",
+                qty: item.qty,
+                price: item.price,
+                currency: item.currency,
+                warehouse: item.warehouse,
+                label_info: item.item_name,
+              };
+            });
+
+            var stockTranslations = {};
+            selected.forEach(function (item) {
+              var orig = translations[item.item_code] || {};
+              var swapped = {};
+              // Move label_info translations → top-level language keys
+              if (orig.label_info) {
+                Object.keys(orig.label_info).forEach(function (lang) {
+                  swapped[lang] = orig.label_info[lang];
+                });
+              }
+              // Move top-level language translations → label_info
+              swapped.label_info = {};
+              Object.keys(orig).forEach(function (lang) {
+                if (lang !== "label_info") {
+                  swapped.label_info[lang] = orig[lang];
+                }
+              });
+              stockTranslations[item.item_code] = swapped;
+            });
+
             QZBarcodeUtils.printBarcodes(
-              selected,
+              stockSelected,
               printer ? { printerName: printer } : {},
-              translations,
+              stockTranslations,
               language
             ).then(function () {
               frappe.show_alert({
