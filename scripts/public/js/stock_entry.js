@@ -68,6 +68,60 @@ function _showStockEntryBarcodeDialog(frm) {
     return;
   }
 
+  // ── Batch-fetch label_info for all items ───────────────────────────
+  var itemCodes = stockItems.map(function (it) { return it.item_code; });
+  frappe.call({
+    method: "frappe.client.get_list",
+    args: {
+      doctype: "Item",
+      filters: [["name", "in", itemCodes]],
+      fields: ["name", "label_info"],
+      limit_page_length: itemCodes.length + 10,
+    },
+    callback: function (r) {
+      var labelInfoMap = {};
+      (r.message || []).forEach(function (row) {
+        if (row.label_info) {
+          labelInfoMap[row.name] = row.label_info;
+        }
+      });
+      // Attach label_info to each stock item
+      stockItems.forEach(function (item) {
+        item.label_info = labelInfoMap[item.item_code] || "";
+      });
+
+      // ── Fetch price lists, then show dialog ──────────────────────
+      frappe.call({
+        method: "frappe.client.get_list",
+        args: {
+          doctype: "Price List",
+          filters: { enabled: 1 },
+          fields: ["name", "currency"],
+          order_by: "name asc",
+          limit_page_length: 100,
+        },
+        callback: function (r2) {
+          var priceLists = r2.message || [];
+          var plCurrencyMap = {};
+          priceLists.forEach(function (pl) { plCurrencyMap[pl.name] = pl.currency; });
+
+          var plOptions = priceLists.map(function (pl) { return pl.name; }).join("\n");
+          var defaultPL = saved.price_list || (priceLists.length ? priceLists[0].name : "");
+          var allCurrencies = priceLists
+            .map(function (pl) { return pl.currency; })
+            .filter(function (c, i, a) { return c && a.indexOf(c) === i; })
+            .sort();
+          if (allCurrencies.indexOf("HUF") === -1) allCurrencies.unshift("HUF");
+          var defaultCurrency = saved.currency || plCurrencyMap[defaultPL] || "HUF";
+
+          _buildDialog(frm, stockItems, saved, plOptions, plCurrencyMap, allCurrencies, defaultPL, defaultCurrency);
+        },
+      });
+    },
+  });
+}
+
+function _buildDialog(frm, stockItems, saved, plOptions, plCurrencyMap, allCurrencies, defaultPL, defaultCurrency) {
   // ── Build the item checklist HTML ──────────────────────────────────
   var rowsHtml = stockItems.map(function (item, idx) {
     return (
@@ -87,7 +141,7 @@ function _showStockEntryBarcodeDialog(frm) {
     '<button class="btn btn-xs btn-default" id="se-check-all">' + __("Check All") + "</button> " +
     '<button class="btn btn-xs btn-default" id="se-uncheck-all">' + __("Uncheck All") + "</button>" +
     "</div>" +
-    '<div style="max-height:350px;overflow-y:auto;border:1px solid #ddd;padding:8px;border-radius:4px">' +
+    '<div style="max-height:300px;overflow-y:auto;border:1px solid #ddd;padding:8px;border-radius:4px">' +
     rowsHtml.join("") +
     "</div>";
 
@@ -95,6 +149,26 @@ function _showStockEntryBarcodeDialog(frm) {
     title: __("Print Barcode Labels – {0}", [frm.doc.name]),
     fields: [
       { fieldtype: "HTML", options: contentHtml },
+      { fieldtype: "Section Break", label: __("Price") },
+      {
+        label: __("Price List"),
+        fieldname: "price_list",
+        fieldtype: "Select",
+        options: plOptions,
+        default: defaultPL,
+        onchange: function () {
+          var pl = d.get_value("price_list");
+          d.set_value("currency", plCurrencyMap[pl] || "HUF");
+        },
+      },
+      {
+        label: __("Currency"),
+        fieldname: "currency",
+        fieldtype: "Select",
+        options: allCurrencies.join("\n"),
+        default: defaultCurrency,
+        reqd: 1,
+      },
       { fieldtype: "Section Break", label: __("Printer") },
       {
         fieldname: "printer_name",
@@ -130,7 +204,7 @@ function _showStockEntryBarcodeDialog(frm) {
             item_name: item.item_name,
             qty: item.qty,
             warehouse: item.warehouse,
-            currency: "",
+            label_info: item.label_info || "",
           });
         }
       });
@@ -142,46 +216,60 @@ function _showStockEntryBarcodeDialog(frm) {
 
       var printer = d.get_value("printer_name");
       var language = d.get_value("language") || "hu";
+      var priceList = d.get_value("price_list");
+      var currency = d.get_value("currency") || "HUF";
 
-      _saveSettings({ printer_name: printer, language: language });
+      _saveSettings({
+        printer_name: printer,
+        language: language,
+        price_list: priceList,
+        currency: currency,
+      });
 
       d.hide();
 
-      // Load translations for selected items, then print
-      var itemCodes = selected.map(function (s) { return s.item_code; });
-      _loadTranslations(itemCodes).then(function (translations) {
-        // Wait for QZBarcodeUtils to be available
-        _ensureQZUtils().then(function () {
-          frappe.show_alert({
-            message: __("Sending {0} label(s) to printer…", [selected.length]),
-            indicator: "blue",
-          });
+      // Fetch prices for all selected items, then print
+      _fetchItemPrices(selected, priceList).then(function (prices) {
+        // Attach price and currency to each item
+        selected.forEach(function (item) {
+          item.currency = currency;
+          item.price = prices[item.item_code] != null ? prices[item.item_code] : null;
+        });
 
-          QZBarcodeUtils.printBarcodes(
-            selected,
-            printer ? { printerName: printer } : {},
-            translations,
-            language
-          ).then(function () {
+        // Load translations for selected items, then print
+        var itemCodes = selected.map(function (s) { return s.item_code; });
+        _loadTranslations(itemCodes).then(function (translations) {
+          _ensureQZUtils().then(function () {
             frappe.show_alert({
-              message: __("{0} label(s) printed successfully.", [selected.length]),
-              indicator: "green",
+              message: __("Sending {0} label(s) to printer…", [selected.length]),
+              indicator: "blue",
             });
 
-            // Update printed counter on the backend
-            _updatePrintCount(selected);
+            QZBarcodeUtils.printBarcodes(
+              selected,
+              printer ? { printerName: printer } : {},
+              translations,
+              language
+            ).then(function () {
+              frappe.show_alert({
+                message: __("{0} label(s) printed successfully.", [selected.length]),
+                indicator: "green",
+              });
+
+              _updatePrintCount(selected);
+            }).catch(function (err) {
+              frappe.msgprint({
+                title: __("Print Error"),
+                indicator: "red",
+                message: err.message || __("Failed to print. Make sure QZ Tray is running."),
+              });
+            });
           }).catch(function (err) {
             frappe.msgprint({
-              title: __("Print Error"),
+              title: __("QZ Tray Error"),
               indicator: "red",
-              message: err.message || __("Failed to print. Make sure QZ Tray is running."),
+              message: err.message || __("Could not connect to QZ Tray."),
             });
-          });
-        }).catch(function (err) {
-          frappe.msgprint({
-            title: __("QZ Tray Error"),
-            indicator: "red",
-            message: err.message || __("Could not connect to QZ Tray."),
           });
         });
       });
@@ -238,6 +326,46 @@ function _showStockEntryBarcodeDialog(frm) {
   });
 
   d.show();
+}
+
+// ── Batch price fetcher ───────────────────────────────────────────────────
+function _fetchItemPrices(items, priceList) {
+  if (!priceList || !items.length) return Promise.resolve({});
+
+  // Deduplicate item codes
+  var codes = [];
+  var seen = {};
+  items.forEach(function (item) {
+    if (!Object.prototype.hasOwnProperty.call(seen, item.item_code)) {
+      seen[item.item_code] = true;
+      codes.push(item.item_code);
+    }
+  });
+
+  return new Promise(function (resolve) {
+    frappe.call({
+      method: "frappe.client.get_list",
+      args: {
+        doctype: "Item Price",
+        filters: [
+          ["item_code", "in", codes],
+          ["price_list", "=", priceList],
+        ],
+        fields: ["item_code", "price_list_rate"],
+        limit_page_length: codes.length + 10,
+      },
+      callback: function (r) {
+        var prices = {};
+        (r.message || []).forEach(function (row) {
+          if (row.price_list_rate != null) {
+            prices[row.item_code] = row.price_list_rate;
+          }
+        });
+        resolve(prices);
+      },
+      error: function () { resolve({}); },
+    });
+  });
 }
 
 // ── QZ Utils lazy loader ──────────────────────────────────────────────────
