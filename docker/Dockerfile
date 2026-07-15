@@ -224,9 +224,9 @@ USER frappe
 # -----------------------------------------------------------------------------
 # Stage 2: runtime image (no build tools)
 # -----------------------------------------------------------------------------
+ARG FRAPPE_BRANCH=version-16
 FROM ${FRAPPE_IMAGE_PREFIX}/base:${FRAPPE_BRANCH} AS runtime
 
-ARG FRAPPE_BRANCH=version-16
 ENV FRAPPE_BRANCH=${FRAPPE_BRANCH}
 ENV NEXT_TELEMETRY_DISABLED=1
 
