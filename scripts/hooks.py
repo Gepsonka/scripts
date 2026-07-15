@@ -64,6 +64,7 @@ app_include_js = [
 doctype_js = {
 	"Item": "public/js/item.js",
 	"Stock Entry": "public/js/stock_entry.js",
+	"Item Price": "public/js/item_price.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -176,9 +177,9 @@ fixtures = [
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Item Price": "scripts.overrides.item_price.CustomItemPrice",
+}
 
 # Document Events
 # ---------------
