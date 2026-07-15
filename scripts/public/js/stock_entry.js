@@ -368,32 +368,32 @@ function _fetchItemPrices(items, priceList) {
   });
 }
 
-// ── QZ Utils lazy loader ──────────────────────────────────────────────────
+// ── QZ Utils lazy loader (with freshness check) ────────────────────────
 var _qzUtilsLoadPromise = null;
 
-function _ensureQZUtils() {
-  if (window.QZBarcodeUtils) return Promise.resolve();
-  if (_qzUtilsLoadPromise) return _qzUtilsLoadPromise;
+function _isFreshQZUtils() {
+  if (!window.QZBarcodeUtils || typeof window.QZBarcodeUtils.buildZPL !== "function") {
+    return false;
+  }
+  // Check for NEW code signature — only exists in the current version
+  var src = window.QZBarcodeUtils.buildZPL.toString();
+  return src.indexOf("var barcodeHeight = 65;") !== -1;
+}
 
-  _qzUtilsLoadPromise = new Promise(function (resolve, reject) {
-    // qz_utils.js is already included via app_include_js,
-    // but ensure it's fully loaded
-    var check = function () {
-      if (window.QZBarcodeUtils) {
-        resolve();
-      } else {
-        setTimeout(check, 200);
-      }
-    };
-    check();
-    // Timeout after 10 seconds
-    setTimeout(function () {
-      if (!window.QZBarcodeUtils) {
-        reject(new Error("QZ Tray utilities did not load in time."));
-      }
-    }, 10000);
+function _reloadQZUtils() {
+  return new Promise(function (resolve, reject) {
+    var s = document.createElement("script");
+    s.src = "/assets/scripts/js/qz_utils.js?v=" + Date.now();
+    s.onload = function () { resolve(); };
+    s.onerror = function () { reject(new Error("Failed to reload qz_utils.js")); };
+    document.head.appendChild(s);
   });
+}
 
+function _ensureQZUtils() {
+  if (_isFreshQZUtils()) return Promise.resolve();
+  if (_qzUtilsLoadPromise) return _qzUtilsLoadPromise;
+  _qzUtilsLoadPromise = _reloadQZUtils();
   return _qzUtilsLoadPromise;
 }
 
