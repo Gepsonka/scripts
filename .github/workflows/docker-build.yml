@@ -11,8 +11,7 @@ name: Build and Push Docker Image
 #   - merged PRs (also fire push events on the branch)
 #   - manual workflow_dispatch with optional version overrides
 #
-# Uses the latest v16 Docker images (frappe/build:version-16, frappe/base:version-16)
-# and the latest erpnext version-16 branch.
+# Frappe Docker pinned to v16.25.0, ERPNext using latest version-16.
 on:
   push:
     branches:
@@ -27,11 +26,11 @@ on:
       frappe_branch:
         description: "Frappe branch/tag (Docker image tag)"
         required: false
-        default: "version-16"
+        default: "v16.25.0"
 
 env:
   ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
-  FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'version-16' }}
+  FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'v16.25.0' }}
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
 
 jobs:
