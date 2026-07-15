@@ -6,13 +6,15 @@ name: Build and Push Docker Image
 # `bench build` at runtime.
 #
 # Triggers on:
-#   - push to master
-#   - merged PRs (also fire push events on master)
+#   - push to master  → tags: latest, version-16, sha-XXXX, build-NNN
+#   - push to dev     → tags: dev, version-16, sha-XXXX, build-NNN
+#   - merged PRs (also fire push events on the branch)
 #   - manual workflow_dispatch with optional branch overrides
 on:
   push:
     branches:
       - master
+      - dev
   workflow_dispatch:
     inputs:
       erpnext_branch:
@@ -31,7 +33,7 @@ env:
 
 jobs:
   build-and-push:
-    name: Build and push production image
+    name: Build and push ${{ github.ref_name }} image
     runs-on: ubuntu-latest
     # `bench init` + `bench build --production` against the full Frappe/ERPNext
     # + custom apps tree can run for 25-35 minutes on a cold cache. Default
@@ -59,6 +61,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
             type=raw,value=${{ env.ERPNEXT_BRANCH }}
             type=sha,prefix=sha-,format=short
             type=raw,value=build-${{ github.run_number }}
