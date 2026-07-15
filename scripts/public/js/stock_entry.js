@@ -239,7 +239,7 @@ function _buildDialog(frm, stockItems, saved, plOptions, plCurrencyMap, allCurre
         // Load translations for selected items, then print
         var itemCodes = selected.map(function (s) { return s.item_code; });
         _loadTranslations(itemCodes).then(function (translations) {
-          _ensureQZUtils().then(function () {
+          _seEnsureQZUtils().then(function () {
             frappe.show_alert({
               message: __("Sending {0} label(s) to printer…", [selected.length]),
               indicator: "blue",
@@ -286,7 +286,7 @@ function _buildDialog(frm, stockItems, saved, plOptions, plCurrencyMap, allCurre
 
   // Printer detection button
   d.fields_dict.detect_btn.$input.on("click", function () {
-    _ensureQZUtils().then(function () {
+    _seEnsureQZUtils().then(function () {
       frappe.show_alert({ message: __("Connecting to QZ Tray…"), indicator: "blue" });
       QZBarcodeUtils.listPrinters()
         .then(function (printers) {
@@ -369,9 +369,9 @@ function _fetchItemPrices(items, priceList) {
 }
 
 // ── QZ Utils lazy loader (with freshness check) ────────────────────────
-var _qzUtilsLoadPromise = null;
+var _seQZUtilsLoadPromise = null;
 
-function _isFreshQZUtils() {
+function _seIsFreshQZUtils() {
   if (!window.QZBarcodeUtils || typeof window.QZBarcodeUtils.buildZPL !== "function") {
     return false;
   }
@@ -380,7 +380,7 @@ function _isFreshQZUtils() {
   return src.indexOf("var barcodeHeight = 65;") !== -1;
 }
 
-function _reloadQZUtils() {
+function _seReloadQZUtils() {
   return new Promise(function (resolve, reject) {
     var s = document.createElement("script");
     s.src = "/assets/scripts/js/qz_utils.js?v=" + Date.now();
@@ -390,11 +390,11 @@ function _reloadQZUtils() {
   });
 }
 
-function _ensureQZUtils() {
-  if (_isFreshQZUtils()) return Promise.resolve();
-  if (_qzUtilsLoadPromise) return _qzUtilsLoadPromise;
-  _qzUtilsLoadPromise = _reloadQZUtils();
-  return _qzUtilsLoadPromise;
+function _seEnsureQZUtils() {
+  if (_seIsFreshQZUtils()) return Promise.resolve();
+  if (_seQZUtilsLoadPromise) return _seQZUtilsLoadPromise;
+  _seQZUtilsLoadPromise = _seReloadQZUtils();
+  return _seQZUtilsLoadPromise;
 }
 
 // ── Backend print-count updater ───────────────────────────────────────────
