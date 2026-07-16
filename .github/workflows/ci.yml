@@ -91,14 +91,25 @@ jobs:
             --python "$(python3 -c 'import sys; print(sys.executable)')" \
             ~/frappe-bench
 
-      - name: Install
+      - name: Install scripts app
         working-directory: /home/runner/frappe-bench
-        run: |
-          bench get-app scripts $GITHUB_WORKSPACE
-          bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app scripts
-          bench build
+        run: bench get-app scripts $GITHUB_WORKSPACE
+
+      - name: Install dev dependencies
+        working-directory: /home/runner/frappe-bench
+        run: bench setup requirements --dev
+
+      - name: Create test site
+        working-directory: /home/runner/frappe-bench
+        run: bench new-site --db-root-password root --admin-password admin test_site
+
+      - name: Install scripts app on site
+        working-directory: /home/runner/frappe-bench
+        run: bench --site test_site install-app scripts
+
+      - name: Build assets
+        working-directory: /home/runner/frappe-bench
+        run: bench build
         env:
           CI: 'Yes'
 
