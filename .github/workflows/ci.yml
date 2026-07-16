@@ -16,7 +16,6 @@ jobs:
     strategy:
       fail-fast: false
     name: Server
-    continue-on-error: true
 
     services:
       redis-cache:
@@ -76,52 +75,60 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
-      - name: Install MariaDB Client
+      - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y mariadb-client
+          sudo apt-get update
+          sudo apt-get install -y mariadb-client libmysqlclient-dev
 
-      - name: Setup DB & bench
+      - name: Configure MariaDB
         run: |
           mariadb --host 127.0.0.1 --port 3306 -u root -proot \
-            -e "SET GLOBAL character_set_server = 'utf8mb4'"
+            -e "SET GLOBAL character_set_server = 'utf8mb4'" || true
           mariadb --host 127.0.0.1 --port 3306 -u root -proot \
-            -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+            -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'" || true
+
+      - name: Init bench
+        run: |
           pip install frappe-bench
-          bench init --skip-redis-config-generation --skip-assets \
+          bench init \
+            --skip-redis-config-generation \
+            --skip-assets \
             --python "$(python3 -c 'import sys; print(sys.executable)')" \
             ~/frappe-bench
 
-      - name: Install scripts app
+      - name: Get apps
         working-directory: /home/runner/frappe-bench
         run: |
           bench get-app --branch version-16 https://github.com/frappe/erpnext
           bench get-app scripts $GITHUB_WORKSPACE
 
-      - name: Setup dev dependencies
+      - name: Setup dev
         working-directory: /home/runner/frappe-bench
         run: bench setup requirements --dev
 
-      - name: Create test site
+      - name: Create site
         working-directory: /home/runner/frappe-bench
-        run: bench new-site --admin-password admin test_site
+        run: |
+          bench new-site \
+            --db-root-password root \
+            --admin-password admin \
+            test_site
 
-      - name: Install apps
+      - name: Install apps on site
         working-directory: /home/runner/frappe-bench
-        continue-on-error: true
+        timeout-minutes: 10
         run: |
           bench --site test_site install-app erpnext
           bench --site test_site install-app scripts
 
       - name: Build assets
         working-directory: /home/runner/frappe-bench
-        continue-on-error: true
         run: bench build
         env:
           CI: 'Yes'
 
       - name: Run tests
         working-directory: /home/runner/frappe-bench
-        continue-on-error: true
         run: |
           bench --site test_site set-config allow_tests true
           bench --site test_site run-tests --app scripts
