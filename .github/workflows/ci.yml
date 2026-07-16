@@ -96,44 +96,18 @@ jobs:
             --python "$(python3 -c 'import sys; print(sys.executable)')" \
             ~/frappe-bench
 
-      - name: Get apps
+      - name: Setup, install & test
         working-directory: /home/runner/frappe-bench
-        timeout-minutes: 15
+        timeout-minutes: 30
         run: |
           source env/bin/activate
+          set -ex
           bench get-app --branch version-16 https://github.com/frappe/erpnext
           bench get-app scripts $GITHUB_WORKSPACE
-
-      - name: Setup dev
-        working-directory: /home/runner/frappe-bench
-        run: |
-          source env/bin/activate
           bench setup requirements --dev
-
-      - name: Create site & install apps
-        working-directory: /home/runner/frappe-bench
-        timeout-minutes: 20
-        run: |
-          source env/bin/activate
-          bench new-site \
-            --db-root-password root \
-            --admin-password admin \
-            test_site
+          MYSQL_PWD=root bench new-site --db-root-password root --admin-password admin test_site
           bench --site test_site install-app erpnext
           bench --site test_site install-app scripts
-
-      - name: Build assets
-        working-directory: /home/runner/frappe-bench
-        run: |
-          source env/bin/activate
-          bench build
-        env:
-          CI: 'Yes'
-
-      - name: Run tests
-        working-directory: /home/runner/frappe-bench
-        run: |
-          source env/bin/activate
           bench --site test_site set-config allow_tests true
           bench --site test_site run-tests --app scripts
         env:
