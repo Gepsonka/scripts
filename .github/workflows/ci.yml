@@ -1,4 +1,3 @@
-
 name: CI
 
 on:
@@ -93,7 +92,9 @@ jobs:
 
       - name: Install scripts app
         working-directory: /home/runner/frappe-bench
-        run: bench get-app scripts $GITHUB_WORKSPACE
+        run: |
+          bench get-app --branch version-16 https://github.com/frappe/erpnext
+          bench get-app scripts $GITHUB_WORKSPACE
 
       - name: Install dev dependencies
         working-directory: /home/runner/frappe-bench
@@ -103,9 +104,11 @@ jobs:
         working-directory: /home/runner/frappe-bench
         run: bench new-site --db-root-password root --admin-password admin test_site
 
-      - name: Install scripts app on site
+      - name: Install apps on site
         working-directory: /home/runner/frappe-bench
-        run: bench --site test_site install-app scripts
+        run: |
+          bench --site test_site install-app erpnext
+          bench --site test_site install-app scripts
 
       - name: Build assets
         working-directory: /home/runner/frappe-bench
