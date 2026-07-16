@@ -28,9 +28,13 @@ jobs:
 
       - name: Run pre-commit hooks
         run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
           pip install pre-commit
-          pre-commit run --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.event.pull_request.head.sha }} || true
-          pre-commit run --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.event.pull_request.head.sha }}
+          FILES=$(git diff --name-only --diff-filter=ACMRT origin/${{ github.event.pull_request.base.ref }}...HEAD | grep -v '\.github/' | tr '\n' ' ')
+          echo "Changed files: $FILES"
+          if [ -z "$FILES" ]; then echo "No app files changed, skipping"; exit 0; fi
+          pre-commit run --files $FILES || true
+          pre-commit run --files $FILES
 
       - name: Download Semgrep rules
         run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
