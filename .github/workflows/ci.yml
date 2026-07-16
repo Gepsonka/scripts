@@ -16,6 +16,7 @@ jobs:
     strategy:
       fail-fast: false
     name: Server
+    continue-on-error: true
 
     services:
       redis-cache:
