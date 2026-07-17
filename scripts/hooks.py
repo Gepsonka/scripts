@@ -64,6 +64,7 @@ app_include_js = [
 doctype_js = {
 	"Item": "public/js/item.js",
 	"Stock Entry": "public/js/stock_entry.js",
+	"Item Price": "public/js/item_price.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -95,9 +96,7 @@ doctype_js = {
 # ----------
 
 # add methods and filters to jinja environment
-jinja = {
-	"methods": ["scripts.utils.barcode_svg"]
-}
+jinja = {"methods": ["scripts.utils.barcode_svg"]}
 
 # Installation
 # ------------
@@ -138,30 +137,38 @@ jinja = {
 fixtures = [
 	{
 		"doctype": "Client Script",
-		"filters": [[
-			"dt", "in", [
-				"Item",
-				"Item Price",
-				"BOM",
-				"Sales Order",
-				"Sales Order Item",
-				"Project",
-				"Work Order",
-				"Work Order Item",
+		"filters": [
+			[
+				"dt",
+				"in",
+				[
+					"Item",
+					"Item Price",
+					"BOM",
+					"Sales Order",
+					"Sales Order Item",
+					"Project",
+					"Work Order",
+					"Work Order Item",
+				],
 			]
-		]],
+		],
 	},
 	{
 		"doctype": "Custom Field",
 		"filters": [
-			["dt", "in", [
-				"Item",
-				"Item Price",
-				"Sales Order",
-				"Sales Order Item",
-				"Purchase Receipt",
-				"Purchase Receipt Item",
-			]],
+			[
+				"dt",
+				"in",
+				[
+					"Item",
+					"Item Price",
+					"Sales Order",
+					"Sales Order Item",
+					"Purchase Receipt",
+					"Purchase Receipt Item",
+				],
+			],
 		],
 	},
 	{
@@ -176,9 +183,9 @@ fixtures = [
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Item Price": "scripts.overrides.item_price.CustomItemPrice",
+}
 
 # Document Events
 # ---------------
@@ -210,8 +217,7 @@ doc_events = {
 		# wired as a single validate handler.
 		"validate": "scripts.utils.wo_overrides.work_order_validate",
 	},
-	"Item": {
-	},
+	"Item": {},
 	"BOM": {
 		# Custom naming (BOM-{item}-{finishing}-{hash} for Products group
 		# items) used to live on a BOM subclass in scripts.doctype.bom.
@@ -316,4 +322,3 @@ doc_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
