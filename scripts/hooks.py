@@ -185,6 +185,7 @@ fixtures = [
 
 override_doctype_class = {
 	"Item Price": "scripts.overrides.item_price.CustomItemPrice",
+	"Item": "scripts.overrides.item.CustomItem",
 }
 
 # Document Events
