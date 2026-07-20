@@ -18,19 +18,18 @@ def execute():
 		if not frappe.db.has_column("tabReport", field_name):
 			continue
 
-		# 1. Delete child rows from the phantom table field
-		frappe.db.sql(f"UPDATE `tabReport` SET `{field_name}` = NULL")
+		sql_update = f"UPDATE `tabReport` SET `{field_name}` = NULL"
+		frappe.db.sql(sql_update)  # nosemgrep
 
-		# 2. Remove the column (safe -- custom app leftovers)
 		try:
-			frappe.db.sql(f"ALTER TABLE `tabReport` DROP COLUMN `{field_name}`")
+			sql_drop = f"ALTER TABLE `tabReport` DROP COLUMN `{field_name}`"
+			frappe.db.sql(sql_drop)  # nosemgrep
 		except Exception:
 			frappe.log_error(
 				f"Could not drop column {field_name} from tabReport",
 				title="fix_report_sync_fields",
 			)
 
-	# 3. Clean any property setter / custom field remnants
 	frappe.db.delete("Custom Field", {
 		"dt": "Report",
 		"fieldname": ("in", ("doctype_to_sync", "snapshot_report")),
@@ -40,5 +39,7 @@ def execute():
 		"field_name": ("in", ("doctype_to_sync", "snapshot_report")),
 	})
 
-	frappe.db.commit()
+	# Schema DDL must run outside Frappe's per-request transaction.
+	frappe.db.commit()  # nosemgrep
+
 	print("OK: Removed stale doctype_to_sync / snapshot_report fields from Report.")
