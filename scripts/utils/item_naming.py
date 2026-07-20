@@ -3,7 +3,6 @@
 
 import frappe
 
-
 PAD_LENGTH = 6
 """Number of digits in the auto-generated item code."""
 
@@ -11,25 +10,23 @@ PAD_LENGTH = 6
 def get_next_item_code() -> str:
 	"""Return the next available 6-digit zero-padded item code.
 
-	Scans all existing Item names for codes matching the pattern
-	(any length of digits, zero-padded or not) and returns the
-	highest numeric value + 1, zero-padded to ``PAD_LENGTH`` digits.
+	Uses a ``SELECT … FOR UPDATE`` row-level lock within Frappe's
+	transaction to guarantee that two concurrent inserts cannot both
+	claim the same number.
 
 	Example:
-		if the highest existing numeric code is ``000042`` → returns ``000043``.
+		if ``000042`` is the highest numeric code → returns ``000043``.
 		if no numeric codes exist → returns ``000001``.
 	"""
-	max_num = 0
-
-	for row in frappe.db.sql(
-		"SELECT `name` FROM `tabItem` WHERE `name` REGEXP '^[0-9]+$'",
-		as_dict=True,
-	):
-		try:
-			num = int(row["name"])
-			if num > max_num:
-				max_num = num
-		except (ValueError, TypeError):
-			continue
-
+	result = frappe.db.sql(
+		"""
+		SELECT MAX(CAST(`name` AS UNSIGNED))
+		FROM `tabItem`
+		WHERE `name` REGEXP '^[0-9]+$'
+		FOR UPDATE
+		""",
+		as_list=True,
+	)
+	max_num = (result[0][0] or 0) if result else 0
+	max_num = int(max_num)
 	return str(max_num + 1).zfill(PAD_LENGTH)
