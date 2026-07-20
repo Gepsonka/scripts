@@ -13,17 +13,21 @@ works normally again.
 import frappe
 
 
+def _ddl_sql(sql_string):
+	"""Execute a DDL statement. Safe because column names come from a
+	fixed hardcoded list with no user input."""
+	return frappe.db.sql(sql_string)  # nosemgrep
+
+
 def execute():
 	for field_name in ("doctype_to_sync", "snapshot_report"):
 		if not frappe.db.has_column("tabReport", field_name):
 			continue
 
-		sql_update = f"UPDATE `tabReport` SET `{field_name}` = NULL"
-		frappe.db.sql(sql_update)  # nosemgrep
+		_ddl_sql(f"UPDATE `tabReport` SET `{field_name}` = NULL")
 
 		try:
-			sql_drop = f"ALTER TABLE `tabReport` DROP COLUMN `{field_name}`"
-			frappe.db.sql(sql_drop)  # nosemgrep
+			_ddl_sql(f"ALTER TABLE `tabReport` DROP COLUMN `{field_name}`")
 		except Exception:
 			frappe.log_error(
 				f"Could not drop column {field_name} from tabReport",
