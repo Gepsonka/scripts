@@ -323,3 +323,26 @@ doc_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+# -----------------------------------------------------------------------------
+# Price-inheritance patch bootstrap
+# -----------------------------------------------------------------------------
+# ``frappe._load_app_hooks()`` in ``frappe/__init__.py`` always imports
+# ``scripts.hooks`` (via ``importlib.import_module(f"{app}.hooks")``), but
+# nothing else ever imports ``scripts.overrides``. That means the patch that
+# replaces ``erpnext.stock.get_item_details.get_item_price`` with our
+# variant→template fallback wrapper would silently never be installed.
+#
+# We trigger it once, when this module is first imported, so the wrapper is
+# in place for every subsequent request processed by the worker.
+#
+# The ``try/except`` is required because ``bench compile-translations`` runs
+# very early in the Docker build, before erpnext is on the path - the
+# ``frappe.connect()`` call inside ``install()`` would otherwise crash the
+# whole image build with ``ImportError: No module named 'erpnext'``.
+try:
+	from scripts.overrides.get_item_details_patch import install as _install_price_patch
+
+	_install_price_patch()
+except Exception:
+	pass
