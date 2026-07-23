@@ -64,6 +64,7 @@ app_include_js = [
 doctype_js = {
 	"Item": "public/js/item.js",
 	"Stock Entry": "public/js/stock_entry.js",
+	"Item Price": "public/js/item_price.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -95,9 +96,7 @@ doctype_js = {
 # ----------
 
 # add methods and filters to jinja environment
-jinja = {
-	"methods": ["scripts.utils.barcode_svg"]
-}
+jinja = {"methods": ["scripts.utils.barcode_svg"]}
 
 # Installation
 # ------------
@@ -138,30 +137,38 @@ jinja = {
 fixtures = [
 	{
 		"doctype": "Client Script",
-		"filters": [[
-			"dt", "in", [
-				"Item",
-				"Item Price",
-				"BOM",
-				"Sales Order",
-				"Sales Order Item",
-				"Project",
-				"Work Order",
-				"Work Order Item",
+		"filters": [
+			[
+				"dt",
+				"in",
+				[
+					"Item",
+					"Item Price",
+					"BOM",
+					"Sales Order",
+					"Sales Order Item",
+					"Project",
+					"Work Order",
+					"Work Order Item",
+				],
 			]
-		]],
+		],
 	},
 	{
 		"doctype": "Custom Field",
 		"filters": [
-			["dt", "in", [
-				"Item",
-				"Item Price",
-				"Sales Order",
-				"Sales Order Item",
-				"Purchase Receipt",
-				"Purchase Receipt Item",
-			]],
+			[
+				"dt",
+				"in",
+				[
+					"Item",
+					"Item Price",
+					"Sales Order",
+					"Sales Order Item",
+					"Purchase Receipt",
+					"Purchase Receipt Item",
+				],
+			],
 		],
 	},
 	{
@@ -176,9 +183,10 @@ fixtures = [
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Item Price": "scripts.overrides.item_price.CustomItemPrice",
+	"Item": "scripts.overrides.item.CustomItem",
+}
 
 # Document Events
 # ---------------
@@ -210,8 +218,7 @@ doc_events = {
 		# wired as a single validate handler.
 		"validate": "scripts.utils.wo_overrides.work_order_validate",
 	},
-	"Item": {
-	},
+	"Item": {},
 	"BOM": {
 		# Custom naming (BOM-{item}-{finishing}-{hash} for Products group
 		# items) used to live on a BOM subclass in scripts.doctype.bom.
@@ -317,3 +324,25 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+# -----------------------------------------------------------------------------
+# Price-inheritance patch bootstrap
+# -----------------------------------------------------------------------------
+# ``frappe._load_app_hooks()`` in ``frappe/__init__.py`` always imports
+# ``scripts.hooks`` (via ``importlib.import_module(f"{app}.hooks")``), but
+# nothing else ever imports ``scripts.overrides``. That means the patch that
+# replaces ``erpnext.stock.get_item_details.get_item_price`` with our
+# variant→template fallback wrapper would silently never be installed.
+#
+# We trigger it once, when this module is first imported, so the wrapper is
+# in place for every subsequent request processed by the worker.
+#
+# The ``try/except`` is required because ``bench compile-translations`` runs
+# very early in the Docker build, before erpnext is on the path - the
+# ``frappe.connect()`` call inside ``install()`` would otherwise crash the
+# whole image build with ``ImportError: No module named 'erpnext'``.
+try:
+	from scripts.overrides.get_item_details_patch import install as _install_price_patch
+
+	_install_price_patch()
+except Exception:
+	pass
