@@ -10,3 +10,6 @@ __pycache__
 private-key.pem
 *.key.pem
 k8s/qz-secret.yaml
+
+# Rendered at Docker build time (passed as a BuildKit secret)
+apps.json

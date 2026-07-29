@@ -1,0 +1,47 @@
+# Demo FrappeSite on the scripts-bench, reachable at
+# https://demo.k8s.orb.local (OrbStack's *.k8s.orb.local wildcard resolves
+# to the ingress LoadBalancer).
+#
+# The operator provisions the database + user on frappe-mariadb, creates
+# the site with `bench new-site --install-app erpnext --install-app
+# scripts`, and creates an Ingress for it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-site-admin-password
+  namespace: frappe-demo
+type: Opaque
+stringData:
+  # ERPNext Administrator login for the demo site.
+  password: "admin"
+---
+apiVersion: vyogo.tech/v1
+kind: FrappeSite
+metadata:
+  name: demo-site
+  namespace: frappe-demo
+spec:
+  benchRef:
+    name: scripts-bench
+
+  # Must match the Host header of incoming traffic.
+  siteName: demo.k8s.orb.local
+
+  adminPasswordSecretRef:
+    name: demo-site-admin-password
+
+  # Installed during site creation (immutable afterwards).
+  apps:
+    - erpnext
+    - scripts
+
+  dbConfig:
+    provider: mariadb
+    mode: shared
+    mariadbRef:
+      name: frappe-mariadb
+      namespace: frappe-demo
+
+  ingress:
+    enabled: true
+    className: nginx

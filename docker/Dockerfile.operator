@@ -1,0 +1,86 @@
+# syntax=docker/dockerfile:1.7
+#
+# Operator-compatible variant of the production image, for deployments
+# managed by the frappe-operator (https://github.com/vyogotech/frappe-operator).
+#
+# This does NOT rebuild the bench. It layers on top of the image produced by
+# docker/Dockerfile (build that first) and adapts it to the contract the
+# operator expects from a bench image:
+#
+#   - Baked assets live at /home/frappe/assets_cache. The operator's init
+#     jobs (bench_init.sh / site_init.sh) copy them into the shared sites
+#     PVC on every image change. Our production image keeps them at
+#     /home/frappe/frappe-bench/assets instead, so we move them.
+#
+#   - ENTRYPOINT is the operator-style entrypoint (maps arbitrary UIDs into
+#     /etc/passwd, then execs the container args). The operator runs
+#     components by passing args: "nginx-entrypoint.sh" (nginx),
+#     "node .../socketio.js" (socketio), "bench schedule" (scheduler),
+#     "bench worker --queue ..." (workers). Gunicorn gets no args, so the
+#     image CMD below is used for it.
+#
+#   - nginx config template at /templates/nginx/frappe.conf.template plus
+#     nginx-entrypoint.sh on PATH (the operator passes BACKEND/SOCKETIO env
+#     vars and expects the component to render its own config).
+#
+#   - restic/wait-for-it/jq/gettext-base installed (backup/restore jobs and
+#     envsubst in nginx-entrypoint.sh need them).
+#
+# The pods run as the image's own frappe user (UID 1000) - the FrappeBench
+# manifest sets security.podSecurityContext accordingly. Only the nginx
+# runtime dirs need group-write adjustment.
+#
+# Build (from the repo root, after building the base image):
+#   docker build -f docker/Dockerfile -t erpnext-scripts:demo .
+#   docker build -f docker/Dockerfile.operator -t erpnext-scripts-operator:demo .
+#
+# Vendored scripts in docker/operator/ come from
+# vyogotech/frappe-erpnext-images-for-operator (Apache-2.0).
+
+ARG BASE_IMAGE=erpnext-scripts:latest
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Runtime utilities the operator (and its backup/restore jobs) expect.
+# nginx itself is already present in the frappe/base-derived image; install
+# it only if a future base image drops it.
+RUN apt-get update && \
+  apt-get install --no-install-recommends -y restic wait-for-it jq gettext-base && \
+  (command -v nginx >/dev/null || apt-get install --no-install-recommends -y nginx) && \
+  rm -rf /var/lib/apt/lists/*
+
+# Move baked assets to the location the operator's init jobs sync from.
+# /home/frappe/frappe-bench/sites is a PVC mount at runtime; nothing may
+# depend on image content under sites/ anymore (the production entrypoint's
+# symlink trick is replaced by the operator's asset sync).
+RUN mv /home/frappe/frappe-bench/assets /home/frappe/assets_cache && \
+  mkdir -p /home/frappe/frappe-bench/sites /home/frappe/frappe-bench/logs && \
+  # nginx runs as the frappe user but needs its runtime dirs writable.
+  chown -R 1000:0 /etc/nginx /var/log/nginx /var/lib/nginx /run && \
+  chmod -R g=u /etc/nginx /var/log/nginx /var/lib/nginx /run
+
+COPY --chown=1000:0 docker/operator/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=1000:0 docker/operator/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
+COPY docker/operator/nginx-template.conf /templates/nginx/frappe.conf.template
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
+
+USER frappe
+WORKDIR /home/frappe/frappe-bench
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Used for the gunicorn component only - every other component gets its
+# command from the operator via container args (see header).
+CMD [ \
+  "/home/frappe/frappe-bench/env/bin/gunicorn", \
+  "--chdir=/home/frappe/frappe-bench/sites", \
+  "--bind=0.0.0.0:8000", \
+  "--threads=4", \
+  "--workers=2", \
+  "--worker-class=gthread", \
+  "--worker-tmp-dir=/dev/shm", \
+  "--timeout=120", \
+  "--preload", \
+  "frappe.app:application" \
+  ]

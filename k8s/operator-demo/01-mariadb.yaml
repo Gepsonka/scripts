@@ -1,0 +1,55 @@
+# Shared MariaDB instance managed by the mariadb-operator.
+# The frappe-operator provisions one database + user per FrappeSite
+# against this instance (dbConfig.mode: shared).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: frappe-mariadb-root
+  namespace: frappe-demo
+type: Opaque
+stringData:
+  # Demo-only password. Do not reuse for anything real.
+  password: "demo-root-password-change-me"
+---
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: MariaDB
+metadata:
+  name: frappe-mariadb
+  namespace: frappe-demo
+spec:
+  rootPasswordSecretKeyRef:
+    name: frappe-mariadb-root
+    key: password
+
+  # Frappe requires MariaDB 10.6+
+  image: mariadb:10.11
+
+  storage:
+    size: 5Gi
+    # OrbStack/k3s default; delete to use the cluster default.
+    storageClassName: local-path
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  replicas: 1
+  port: 3306
+
+  # Settings Frappe/ERPNext needs (utf8mb4 + large packets).
+  myCnf: |
+    [mariadb]
+    bind-address=*
+    default_storage_engine=InnoDB
+    innodb_file_per_table=1
+    max_allowed_packet=256M
+    character-set-client-handshake=FALSE
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+
+    [client]
+    default-character-set=utf8mb4

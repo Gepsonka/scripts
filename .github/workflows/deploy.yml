@@ -1,30 +1,48 @@
-name: Deploy to k3s
+name: Deploy to k3s (frappe-operator)
 
+# Deploys a freshly built image to the operator-managed k3s benches.
+#
+# This replaces the old flow (kubectl set image + manual bench migrate /
+# clear-cache in pods). Now a deploy is a single declarative change:
+# patch the FrappeBench's spec.imageConfig to the new immutable tag.
+# The frappe-operator then, in order:
+#   1. re-runs the bench init job with the new image (re-syncs
+#      /home/frappe/assets_cache -> sites/assets PVC),
+#   2. rolling-updates gunicorn/nginx/socketio/scheduler/workers,
+#   3. re-runs each site init job as an upgrade: bench migrate, app
+#      install, admin password sync, bench clear-cache (with a Redis
+#      flush fallback).
+#
+# Triggers after "Build and Push Docker Image" succeeds:
+#   - dev branch    -> dev-bench / dev-site  (namespace frappe-dev)   [ACTIVE]
+#   - master branch -> prod-bench / prod-site (namespace frappe-prod) [DISABLED
+#                      until the prod migration in k8s/operator-demo/MIGRATION.md
+#                      is done - flip the `if:` on the deploy-prod job]
+#
+# Promotion rule: prod must deploy the SAME build-NNN tag that passed on
+# dev, never a rebuild. Since the tag comes from the triggering build
+# run, master builds and dev builds produce different numbers - the
+# master pipeline is what carries a dev-validated tag to prod.
 on:
   workflow_run:
     workflows: ["Build and Push Docker Image"]
     types: [completed]
-    branches: [master]
+    branches: [dev, master]
 
-# Only trigger if docker-build succeeded
 concurrency:
-  group: k3s-deploy-${{ github.ref_name }}
+  group: k3s-deploy-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
+  OPERATOR_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts-operator
   K3S_API_HOST: ${{ secrets.K3S_API_HOST }}
 
 jobs:
-  deploy:
-    name: Deploy to on-premise k3s
+  deploy-dev:
+    name: Deploy to dev-bench
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'dev' }}
     steps:
-      - name: Checkout scripts app
-        uses: actions/checkout@v4
-
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
@@ -37,8 +55,8 @@ jobs:
 
       - name: Fetch kubeconfig via bastion
         run: |
-          # SSH to bastion, sudo to read k3s.yaml, rewrite server URL to public API host
           KUBECONFIG=$(ssh -tt -o StrictHostKeyChecking=no \
+            -i ~/.ssh/k3s_deploy_key \
             "${{ secrets.K3S_BASTION_USER }}@${{ secrets.K3S_BASTION }}" \
             "sudo cat /etc/rancher/k3s/k3s.yaml" \
             | sed "s|https://127.0.0.1:6443|https://$K3S_API_HOST:6443|")
@@ -46,53 +64,119 @@ jobs:
           echo "::add-mask::kubeconfig"
           chmod 644 kubeconfig
 
-      # ───────────────────────────────────────────────────────────────
-      # 1. Rollout new pods FIRST.
-      #    The build workflow pushes multiple tags; we use the
-      #    build-number tag (build-NNN) which is stable and doesn't
-      #    depend on SHA format matching between workflows.
-      #    The pod mounts the persistent volume which has the correct
-      #    common_site_config.json.
-      # ───────────────────────────────────────────────────────────────
-      - name: Rollout new bench Deployment
+      - name: Point dev-bench at the new image
         run: |
           export KUBECONFIG=$PWD/kubeconfig
-          IMAGE_TAG=$IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
-          echo "Updating to image: $IMAGE_TAG"
-          kubectl set image deployment/frappe-bench \
-            bench=$IMAGE_TAG \
-            --namespace=default
-          echo "Image updated. Waiting for rollout..."
-          kubectl rollout status deployment/frappe-bench --namespace=default --timeout=600s
-          echo "Rollout complete."
+          IMAGE_TAG=$OPERATOR_IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          echo "New image: $IMAGE_TAG"
+          # Patching repository as well migrates the bench off the
+          # server-local registry (localhost:5000) onto Docker Hub.
+          kubectl -n frappe-dev patch frappebench dev-bench --type merge \
+            -p "{\"spec\":{\"imageConfig\":{\"repository\":\"$OPERATOR_IMAGE_NAME\",\"tag\":\"build-${{ github.event.workflow_run.run_number }\"}}}"
 
-      # ───────────────────────────────────────────────────────────────
-      # 2. Run database migration INSIDE a running pod.
-      #    The pod already has the correct DB config from the mounted
-      #    volume, so `bench migrate` connects to the right database.
-      # ───────────────────────────────────────────────────────────────
-      - name: Run database migration
+      - name: Wait for bench re-init and rollout
+        # The operator re-runs dev-bench-init with the new image (asset
+        # sync), rolls all components, then records initializedImage.
         run: |
           export KUBECONFIG=$PWD/kubeconfig
-          echo "Waiting for at least one bench pod to be ready..."
-          kubectl wait --for=condition=ready pod -l app=frappe-bench --namespace=default --timeout=120s
-          POD=$(kubectl get pods -l app=frappe-bench --namespace=default -o name | head -1)
-          echo "Running migration on $POD..."
-          kubectl exec --namespace=default "$POD" -- bench migrate
-          echo "Database migration complete."
+          IMAGE_TAG=$OPERATOR_IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          kubectl -n frappe-dev wait \
+            --for=jsonpath="{.status.initializedImage}=$IMAGE_TAG" \
+            frappebench/dev-bench --timeout=900s
 
-      # ───────────────────────────────────────────────────────────────
-      # 3. Clear Frappe caches on all bench pods so the updated
-      #    schema metadata is picked up immediately.
-      # ───────────────────────────────────────────────────────────────
-      - name: Clear Frappe caches
+      - name: Wait for site upgrade (migrate + cache clear)
+        # The site init job is recreated with the new image (upgrade
+        # path). Give the operator a moment to recreate it, then wait
+        # for completion and Ready phase.
         run: |
           export KUBECONFIG=$PWD/kubeconfig
-          for pod in $(kubectl get pods -l app=frappe-bench --namespace=default -o name); do
-            echo "Clearing cache on $pod..."
-            kubectl exec --namespace=default "$pod" -- bench clear-cache || true
-          done
-          echo "Cache cleared on all pods."
+          sleep 30
+          kubectl -n frappe-dev wait --for=condition=complete \
+            job/dev-site-init --timeout=900s
+          kubectl -n frappe-dev wait \
+            --for=jsonpath='{.status.phase}'=Ready \
+            frappesite/dev-site --timeout=300s
+
+      - name: Smoke test
+        run: |
+          curl -fsS https://dev-erp.d-trend.com/api/method/ping | grep -q pong
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://dev-erp.d-trend.com/login)" = "200"
+          curl -fsSI https://dev-erp.d-trend.com/assets/scripts/js/qz_utils.js | grep -i last-modified
+          echo "Smoke test passed."
 
       - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f kubeconfig
+
+  # ------------------------------------------------------------------
+  # PROD — DISABLED until the prod migration is complete
+  # (k8s/operator-demo/MIGRATION.md, Phases 1-3). To enable:
+  #   1. Create namespace frappe-prod, secrets, prod-bench, prod-site.
+  #   2. Verify prod-site is Ready on the current prod image tag.
+  #   3. Change the `if:` below to:
+  #        if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' }}
+  # The job then deploys to prod-bench exactly like deploy-dev, using
+  # the build tag from the master build (which should be the same tag
+  # already validated on dev — see the promotion rule in the header).
+  # ------------------------------------------------------------------
+  deploy-prod:
+    name: Deploy to prod-bench (DISABLED - prod not migrated)
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure SSH to bastion
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.K3S_SSH_KEY }}" > ~/.ssh/k3s_deploy_key
+          chmod 600 ~/.ssh/k3s_deploy_key
+          ssh-keyscan -H "${{ secrets.K3S_BASTION }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Fetch kubeconfig via bastion
+        run: |
+          KUBECONFIG=$(ssh -tt -o StrictHostKeyChecking=no \
+            -i ~/.ssh/k3s_deploy_key \
+            "${{ secrets.K3S_BASTION_USER }}@${{ secrets.K3S_BASTION }}" \
+            "sudo cat /etc/rancher/k3s/k3s.yaml" \
+            | sed "s|https://127.0.0.1:6443|https://$K3S_API_HOST:6443|")
+          echo "$KUBECONFIG" > kubeconfig
+          echo "::add-mask::kubeconfig"
+          chmod 644 kubeconfig
+
+      - name: Point prod-bench at the new image
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          IMAGE_TAG=$OPERATOR_IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          echo "New image: $IMAGE_TAG"
+          kubectl -n frappe-prod patch frappebench prod-bench --type merge \
+            -p "{\"spec\":{\"imageConfig\":{\"repository\":\"$OPERATOR_IMAGE_NAME\",\"tag\":\"build-${{ github.event.workflow_run.run_number }\"}}}"
+
+      - name: Wait for bench re-init and rollout
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          IMAGE_TAG=$OPERATOR_IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          kubectl -n frappe-prod wait \
+            --for=jsonpath="{.status.initializedImage}=$IMAGE_TAG" \
+            frappebench/prod-bench --timeout=900s
+
+      - name: Wait for site upgrade (migrate + cache clear)
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          sleep 30
+          kubectl -n frappe-prod wait --for=condition=complete \
+            job/prod-site-init --timeout=900s
+          kubectl -n frappe-prod wait \
+            --for=jsonpath='{.status.phase}'=Ready \
+            frappesite/prod-site --timeout=300s
+
+      - name: Smoke test
+        run: |
+          curl -fsS https://erp.d-trend.com/api/method/ping | grep -q pong
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://erp.d-trend.com/login)" = "200"
+          echo "Smoke test passed."
+
+      - name: Cleanup kubeconfig
+        if: always()
         run: rm -f kubeconfig

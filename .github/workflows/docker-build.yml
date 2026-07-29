@@ -5,6 +5,13 @@ name: Build and Push Docker Image
 # erpnext and the scripts app so deployments do not need to run
 # `bench build` at runtime.
 #
+# Also builds the frappe-operator variant of the image
+# (docker/Dockerfile.operator - a thin layer adapting the production
+# image to the operator's contract: assets at /home/frappe/assets_cache,
+# operator entrypoint, nginx template). This is the image the k3s
+# FrappeBench resources reference; deployments only ever use the
+# immutable build-NNN tags.
+#
 # Triggers on:
 #   - push to master  → tags: latest, sha-XXXX, build-NNN
 #   - push to dev     → tags: dev, sha-XXXX, build-NNN
@@ -32,6 +39,7 @@ env:
   ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
   FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'v16.25.0' }}
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
+  OPERATOR_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts-operator
 
 jobs:
   build-and-push:
@@ -94,6 +102,10 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
+          # Also load into the local daemon so the operator-variant build
+          # below can use this exact image as its base without pulling
+          # several GB back from the registry.
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -104,7 +116,34 @@ jobs:
             apps_json=./apps.json
           cache-from: type=gha,scope=${{ github.ref_name }}-${{ github.run_number }}
           cache-to: type=gha,mode=max,scope=${{ github.ref_name }}-${{ github.run_number }}
+
+      - name: Generate Docker metadata (operator variant)
+        id: meta-operator
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.OPERATOR_IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=build-${{ github.run_number }}
+
+      - name: Build and push operator image variant
+        # Thin layer on top of the freshly built base image (see header).
+        # Uses the immutable build-NNN tag as its base so the variant is
+        # guaranteed to wrap exactly this run's image.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.operator
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_NAME }}:build-${{ github.run_number }}
+          tags: ${{ steps.meta-operator.outputs.tags }}
+
       - name: Image summary
         run: |
-          echo "Pushed tags:"
+          echo "Pushed base tags:"
           echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/  /'
+          echo "Pushed operator-variant tags:"
+          echo "${{ steps.meta-operator.outputs.tags }}" | tr ',' '\n' | sed 's/^/  /'
