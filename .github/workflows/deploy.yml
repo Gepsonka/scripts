@@ -65,14 +65,17 @@ jobs:
           chmod 644 kubeconfig
 
       - name: Point dev-bench at the new image
+        env:
+          TAG: build-${{ github.event.workflow_run.run_number }}
         run: |
           export KUBECONFIG=$PWD/kubeconfig
-          IMAGE_TAG=$OPERATOR_IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          IMAGE_TAG="$OPERATOR_IMAGE_NAME:$TAG"
           echo "New image: $IMAGE_TAG"
           # Patching repository as well migrates the bench off the
           # server-local registry (localhost:5000) onto Docker Hub.
-          kubectl -n frappe-dev patch frappebench dev-bench --type merge \
-            -p "{\"spec\":{\"imageConfig\":{\"repository\":\"$OPERATOR_IMAGE_NAME\",\"tag\":\"build-${{ github.event.workflow_run.run_number }\"}}}"
+          kubectl -n frappe-dev patch frappebench dev-bench --type merge -p '{
+            "spec": {"imageConfig": {"repository": "'"$OPERATOR_IMAGE_NAME"'", "tag": "'"$TAG"'"}}
+          }'
 
       - name: Wait for bench re-init and rollout
         # The operator re-runs dev-bench-init with the new image (asset
@@ -146,12 +149,15 @@ jobs:
           chmod 644 kubeconfig
 
       - name: Point prod-bench at the new image
+        env:
+          TAG: build-${{ github.event.workflow_run.run_number }}
         run: |
           export KUBECONFIG=$PWD/kubeconfig
-          IMAGE_TAG=$OPERATOR_IMAGE_NAME:build-${{ github.event.workflow_run.run_number }}
+          IMAGE_TAG="$OPERATOR_IMAGE_NAME:$TAG"
           echo "New image: $IMAGE_TAG"
-          kubectl -n frappe-prod patch frappebench prod-bench --type merge \
-            -p "{\"spec\":{\"imageConfig\":{\"repository\":\"$OPERATOR_IMAGE_NAME\",\"tag\":\"build-${{ github.event.workflow_run.run_number }\"}}}"
+          kubectl -n frappe-prod patch frappebench prod-bench --type merge -p '{
+            "spec": {"imageConfig": {"repository": "'"$OPERATOR_IMAGE_NAME"'", "tag": "'"$TAG"'"}}
+          }'
 
       - name: Wait for bench re-init and rollout
         run: |
