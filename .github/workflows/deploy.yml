@@ -3,15 +3,17 @@ name: Deploy to k3s (frappe-operator)
 # Deploys a freshly built image to the operator-managed k3s benches.
 #
 # This replaces the old flow (kubectl set image + manual bench migrate /
-# clear-cache in pods). Now a deploy is a single declarative change:
-# patch the FrappeBench's spec.imageConfig to the new immutable tag.
+# clear-cache in pods). Now a deploy is two declarative changes:
+# patch the FrappeBench's spec.imageConfig to the new immutable tag,
+# then annotate the FrappeSite with frappe.io/site-version=<tag>.
 # The frappe-operator then, in order:
 #   1. re-runs the bench init job with the new image (re-syncs
 #      /home/frappe/assets_cache -> sites/assets PVC),
 #   2. rolling-updates gunicorn/nginx/socketio/scheduler/workers,
-#   3. re-runs each site init job as an upgrade: bench migrate, app
-#      install, admin password sync, bench clear-cache (with a Redis
-#      flush fallback).
+#   3. re-runs each site init job as an upgrade (triggered by the
+#      site-version annotation - a bench image change alone does NOT
+#      re-run site init): bench migrate, app install, admin password
+#      sync, bench clear-cache (with a Redis flush fallback).
 #
 # Triggers after "Build and Push Docker Image" succeeds:
 #   - dev branch    -> dev-bench / dev-site  (namespace frappe-dev)   [ACTIVE]
@@ -87,10 +89,21 @@ jobs:
             --for=jsonpath="{.status.initializedImage}=$IMAGE_TAG" \
             frappebench/dev-bench --timeout=900s
 
-      - name: Wait for site upgrade (migrate + cache clear)
-        # The site init job is recreated with the new image (upgrade
-        # path). Give the operator a moment to recreate it, then wait
-        # for completion and Ready phase.
+      - name: Trigger site upgrade (migrate + cache clear)
+        # IMPORTANT: a bench image bump alone does NOT re-run a site's
+        # init job. Site upgrades are driven by the frappe.io/site-version
+        # annotation - bump it to the new tag AFTER the bench is on the
+        # new image, and the operator recreates the init job (upgrade
+        # path: bench migrate, app install, admin password sync,
+        # bench clear-cache).
+        env:
+          TAG: build-${{ github.event.workflow_run.run_number }}
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          kubectl -n frappe-dev annotate frappesite dev-site \
+            "frappe.io/site-version=$TAG" --overwrite
+
+      - name: Wait for site upgrade
         run: |
           export KUBECONFIG=$PWD/kubeconfig
           sleep 30
@@ -167,7 +180,17 @@ jobs:
             --for=jsonpath="{.status.initializedImage}=$IMAGE_TAG" \
             frappebench/prod-bench --timeout=900s
 
-      - name: Wait for site upgrade (migrate + cache clear)
+      - name: Trigger site upgrade (migrate + cache clear)
+        # Site upgrades are driven by the frappe.io/site-version
+        # annotation - bump it AFTER the bench is on the new image.
+        env:
+          TAG: build-${{ github.event.workflow_run.run_number }}
+        run: |
+          export KUBECONFIG=$PWD/kubeconfig
+          kubectl -n frappe-prod annotate frappesite prod-site \
+            "frappe.io/site-version=$TAG" --overwrite
+
+      - name: Wait for site upgrade
         run: |
           export KUBECONFIG=$PWD/kubeconfig
           sleep 30

@@ -130,6 +130,12 @@ curl -sI http://demo.k8s.orb.local/assets/scripts/js/qz_utils.js | grep -i last-
     To change TLS/annotations on a Ready site: delete the Ingress and
     bump the CR generation (any `spec` change) so it gets recreated.
     `tls` lives at `spec.tls`, NOT `spec.ingress.tls`.
+  - A bench image bump alone does NOT re-run site init jobs. Site
+    upgrades (bench migrate + cache clear) require bumping the
+    `frappe.io/site-version` annotation on the FrappeSite AFTER the
+    bench reports the new `initializedImage`. `upgrade.sh` and
+    `deploy.yml` do this; forgetting it means new code with an
+    unmigrated DB.
 - Create or upgrade FrappeSites only AFTER the bench reports Ready with
   the new image tag; a site created mid-bench-upgrade can get an init
   job with the old image and end up terminally Failed (delete and

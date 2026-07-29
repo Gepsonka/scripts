@@ -20,8 +20,11 @@ same image tag can silently change content. Any of these produces
 The operator flow is deterministic: an upgrade is one declarative change
 (`spec.imageConfig.tag` → new immutable tag); the operator then
 re-syncs assets (bench init job), rolls every component to the same
-image, and runs each site's init job (`bench migrate` + cache clear
-with Redis-flush fallback). Same image digest everywhere, every time.
+image, and — once you bump the site's `frappe.io/site-version`
+annotation to the same tag (REQUIRED: a bench image change alone does
+not re-run site init) — runs the site's init job in upgrade mode:
+`bench migrate` + cache clear with Redis-flush fallback. Same image
+digest everywhere, every time.
 
 ## Strategy: side-by-side (blue/green), keep the database where it is
 
@@ -207,11 +210,14 @@ IMPLEMENTED in `.github/workflows/` (docker-build.yml + deploy.yml):
    master/dev push. The operator variant wraps the exact base image
    from the same run (`load: true` + `BASE_IMAGE=...:build-NNN`).
 
-2. `deploy.yml` patches the bench `spec.imageConfig` (repository + tag)
-   and waits for `status.initializedImage`, the site init job, and the
-   site Ready phase, then runs smoke checks (ping, login 200, asset
-   Last-Modified). deploy-dev is active; deploy-prod ships disabled
-   (`if: false`) with instructions to enable after Phases 1–3.
+2. `deploy.yml` patches the bench `spec.imageConfig` (repository + tag),
+   waits for `status.initializedImage`, then bumps the site's
+   `frappe.io/site-version` annotation to the same tag (this is what
+   actually triggers `bench migrate` + cache clear on the site — a
+   bench image change alone does not re-run site init), waits for the
+   site init job and Ready phase, then runs smoke checks (ping, login
+   200, asset Last-Modified). deploy-dev is active; deploy-prod ships
+   disabled (`if: false`) with instructions to enable after Phases 1–3.
 
    Keep tags immutable — never rebuild the same tag. This matters for
    the current `dev` tag especially: today a push to the dev branch
