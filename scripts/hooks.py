@@ -278,7 +278,12 @@ doc_events = {
 
 # Request Events
 # ----------------
-# before_request = ["scripts.utils.before_request"]
+# The price-inheritance patch MUST be (re)installed per request: in
+# production get_hooks() is served from the shared redis cache, so most
+# workers never import scripts.hooks and the import-time bootstrap at the
+# bottom of this file never runs in them. frappe.call() below imports the
+# patch module directly in every worker, on every request.
+before_request = ["scripts.overrides.get_item_details_patch.install"]
 # after_request = ["scripts.utils.after_request"]
 
 # Job Events
@@ -325,21 +330,19 @@ doc_events = {
 # }
 
 # -----------------------------------------------------------------------------
-# Price-inheritance patch bootstrap
+# Price-inheritance patch bootstrap (best-effort, non-request contexts)
 # -----------------------------------------------------------------------------
-# ``frappe._load_app_hooks()`` in ``frappe/__init__.py`` always imports
-# ``scripts.hooks`` (via ``importlib.import_module(f"{app}.hooks")``), but
-# nothing else ever imports ``scripts.overrides``. That means the patch that
-# replaces ``erpnext.stock.get_item_details.get_item_price`` with our
-# variant→template fallback wrapper would silently never be installed.
+# The primary install mechanism is the ``before_request`` hook registered
+# above, which runs ``install()`` in every worker on every request (workers
+# that serve get_hooks() from the redis cache never import this module, so
+# an import-time bootstrap alone leaves them unpatched).
 #
-# We trigger it once, when this module is first imported, so the wrapper is
-# in place for every subsequent request processed by the worker.
+# This import-time bootstrap remains as a best-effort install for contexts
+# without requests: ``bench console``, background jobs, scheduler.
 #
 # The ``try/except`` is required because ``bench compile-translations`` runs
-# very early in the Docker build, before erpnext is on the path - the
-# ``frappe.connect()`` call inside ``install()`` would otherwise crash the
-# whole image build with ``ImportError: No module named 'erpnext'``.
+# very early in the Docker build, before erpnext is importable - the erpnext
+# import inside ``install()`` would otherwise crash the whole image build.
 try:
 	from scripts.overrides.get_item_details_patch import install as _install_price_patch
 
