@@ -9,13 +9,13 @@ context.
 Output is byte-identical to `bench build --production`'s internal
 translation step (same library, same arguments).
 """
-from babel.messages.mofile import write_mo
-from babel.messages.pofile import read_po
 from pathlib import Path
 
 import frappe
-from frappe.utils import get_bench_path
+from babel.messages.mofile import write_mo
+from babel.messages.pofile import read_po
 from frappe.gettext.translate import get_locales
+from frappe.utils import get_bench_path
 
 
 def main() -> int:
