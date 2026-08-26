@@ -1,12 +1,14 @@
 """Patches `get_item_price` to include variant->template fallback.
 
-Installed at app startup via ``scripts/__init__.py`` so that EVERY call to
-``erpnext.stock.get_item_details.get_item_price`` automatically falls
-back to the template item's price when the variant has none.
+Installed via the ``before_request`` hook in ``scripts/hooks.py`` so that
+EVERY worker process patches ``erpnext.stock.get_item_details.get_item_price``
+on its first request (the import-time bootstrap in hooks.py alone is not
+reliable: in production get_hooks() comes from the shared redis cache, so
+most workers never import scripts.hooks). The wrapper falls back to the
+template item's price when the variant has none.
 """
 
 import frappe
-
 
 _original = None
 
@@ -39,11 +41,15 @@ def get_item_price(pctx, item_code, ignore_party=False, force_batch_no=False):
 def install():
 	"""Replace ``get_item_price`` in the erpnext module.
 
-	The original is captured *before* the replacement so that the
-	import inside ``_install_original`` picks up the real ERPNext
-	function, not our wrapper.
+	Runs on every request via the ``before_request`` hook, so it must stay
+	cheap and idempotent. The ``is`` check does double duty: it skips the
+	work once patched AND guarantees ``_install_original`` can never capture
+	our own wrapper (which would recurse infinitely).
 	"""
-	_install_original()
 	import erpnext.stock.get_item_details as gid
 
+	if gid.get_item_price is get_item_price:
+		return
+
+	_install_original()
 	gid.get_item_price = get_item_price

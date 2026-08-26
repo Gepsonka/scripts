@@ -1,0 +1,66 @@
+# FrappeBench: shared infrastructure (nginx, gunicorn, socketio, scheduler,
+# workers, redis, sites PVC) for every site on this bench.
+#
+# The image is built locally from this repo:
+#   docker build -f docker/Dockerfile -t erpnext-scripts:demo .
+#   docker build -f docker/Dockerfile.operator -t erpnext-scripts-operator:demo .
+# OrbStack Kubernetes shares the Docker image store, so a non-:latest tag
+# with pullPolicy IfNotPresent is picked up without a registry.
+#
+# UPGRADES: change spec.imageConfig.tag to the new image tag. The operator
+# then re-runs the bench init job (re-syncs assets from the image's
+# /home/frappe/assets_cache into the shared PVC), rolls all component
+# deployments, and re-runs every site init job (bench migrate + cache
+# clear). Never reuse a tag for new content - that is what causes the
+# stale-asset/stale-cache problems of the old deployment.
+apiVersion: vyogo.tech/v1
+kind: FrappeBench
+metadata:
+  name: scripts-bench
+  namespace: frappe-demo
+spec:
+  frappeVersion: "16"
+
+  imageConfig:
+    repository: erpnext-scripts-operator
+    tag: "demo"
+    pullPolicy: IfNotPresent
+
+  # Both apps are baked into the image by docker/Dockerfile.
+  apps:
+    - name: erpnext
+      source: image
+    - name: scripts
+      source: image
+
+  # Demo sizing: single static replica per component, no KEDA.
+  componentAutoscaling:
+    gunicorn:
+      enabled: false
+      staticReplicas: 1
+    socketio:
+      enabled: false
+      staticReplicas: 1
+    scheduler:
+      enabled: false
+      staticReplicas: 1
+    worker-default:
+      enabled: false
+      staticReplicas: 1
+    worker-short:
+      enabled: false
+      staticReplicas: 1
+    worker-long:
+      enabled: false
+      staticReplicas: 1
+
+  storageSize: 5Gi
+  storageClassName: local-path
+
+  # The image runs as its own frappe user (UID/GID 1000), unlike the
+  # operator default of 1001:0. fsGroup 1000 makes the sites PVC writable.
+  security:
+    podSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
