@@ -10,7 +10,6 @@ template item's price when the variant has none.
 
 import frappe
 
-
 _original = None
 
 

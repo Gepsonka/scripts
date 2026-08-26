@@ -15,6 +15,8 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
+        # k8s manifests are intentionally multi-document
+        args: [--allow-multiple-documents]
       - id: debug-statements
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
