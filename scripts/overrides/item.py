@@ -36,14 +36,23 @@ class CustomItem(ERPNextItem):
 
 		Every "Scan Barcode" field searches ``tabItem Barcode``, so once the
 		final item code exists (autoname has already run), a matching row
-		makes the item scannable immediately. Idempotent: items that already
-		have a barcode row equal to their code are left untouched.
+		makes the item scannable immediately. The row uses barcode type
+		``CODE-39`` and the item's default UOM (``stock_uom``). Idempotent:
+		items that already have a barcode row equal to their code are left
+		untouched.
 		"""
 		if not self.item_code:
 			return
 		if any(row.barcode == self.item_code for row in self.barcodes):
 			return
-		self.append("barcodes", {"barcode": self.item_code})
+		self.append(
+			"barcodes",
+			{
+				"barcode": self.item_code,
+				"barcode_type": "CODE-39",
+				"uom": self.stock_uom,
+			},
+		)
 
 	def _validate_item_code_unique(self):
 		"""Block manually typed codes that collide with existing items."""
