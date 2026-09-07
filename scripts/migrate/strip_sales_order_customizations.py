@@ -143,7 +143,10 @@ def strip_sales_order_customizations():
 		frappe.clear_cache(doctype=dt)
 		skipped += 1
 
-	frappe.db.commit()
+	# Explicit commit: like the sibling migrate patches, this runs as a
+	# bench-migrate patch where deleted docs + DDL must be persisted
+	# before the subsequent model sync re-reads the schema.
+	frappe.db.commit()  # nosemgrep
 	print(
 		"scripts.migrate.strip_sales_order_customizations: "
 		f"deleted {deleted_cf} custom fields, {deleted_cs} client scripts, "
