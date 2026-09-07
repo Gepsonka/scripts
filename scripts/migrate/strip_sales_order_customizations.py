@@ -48,6 +48,7 @@ Idempotency
 Safe to re-run: missing records/columns are skipped, and a healthy
 stock site is a fast no-op.
 """
+
 import frappe
 
 TARGET_DOCTYPES = ("Sales Order", "Sales Order Item")
@@ -111,9 +112,7 @@ def strip_sales_order_customizations():
 		#    defines zero Custom Fields here). Collect fieldnames
 		#    first so we can drop their columns in step 4.
 		pending_columns = list(KNOWN_ORPHAN_COLUMNS.get(dt, []))
-		for cf in frappe.get_all(
-			"Custom Field", filters={"dt": dt}, fields=["name", "fieldname"]
-		):
+		for cf in frappe.get_all("Custom Field", filters={"dt": dt}, fields=["name", "fieldname"]):
 			pending_columns.append(cf.fieldname)
 			frappe.delete_doc("Custom Field", cf.name, ignore_missing=True)
 			print(f"  - Custom Field {cf.name}: deleted")

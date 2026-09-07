@@ -12,7 +12,6 @@ Both files import from this leaf module instead, so the import graph
 stays acyclic.
 """
 
-
 # Standard ERPNext doctypes that the scripts app used to ship custom
 # copies of, mapped to the ERPNext module they belong to.
 ERP_NEXT_DOCTYPE_MODULE = {

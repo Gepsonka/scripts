@@ -42,17 +42,17 @@ patch_handler automatically appends `.execute` and resolves it via
 `frappe.get_attr`, so the function on the submodule must be named
 `execute` (not the submodule's own name).
 """
+
 from scripts.migrate._constants import ERP_NEXT_DOCTYPE_MODULE
 from scripts.migrate.reattach_standard_erpnext_doctypes import (
-	reattach_standard_erpnext_doctypes,
 	execute,
+	reattach_standard_erpnext_doctypes,
 )
-
 
 __all__ = [
 	"ERP_NEXT_DOCTYPE_MODULE",
-	"reattach_standard_erpnext_doctypes",
 	"execute",
+	"reattach_standard_erpnext_doctypes",
 	"remove_custom_item_doctype",
 ]
 
