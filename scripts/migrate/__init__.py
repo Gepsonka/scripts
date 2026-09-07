@@ -14,8 +14,11 @@ Property Setter / Client Script). The Python logic that used to live
 on the deleted subclasses now runs as doc_events in:
 
   - scripts/utils/bom_autoname.py       (BOM.before_naming)
-  - scripts/utils/so_validate.py        (Sales Order.validate)
   - scripts/utils/wo_overrides.py       (Work Order.validate)
+
+(Sales Order is intentionally stock ERPNext again: its former
+`scripts/utils/so_validate.py` validate hook and all Sales Order /
+Sales Order Item fixtures were removed, so no doc_event remains.)
 
 Because `bench migrate` is additive and never deletes a DocType that
 already exists in the database, sites that were migrated while the

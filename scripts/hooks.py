@@ -145,8 +145,6 @@ fixtures = [
 					"Item",
 					"Item Price",
 					"BOM",
-					"Sales Order",
-					"Sales Order Item",
 					"Project",
 					"Work Order",
 					"Work Order Item",
@@ -163,8 +161,6 @@ fixtures = [
 				[
 					"Item",
 					"Item Price",
-					"Sales Order",
-					"Sales Order Item",
 					"Purchase Receipt",
 					"Purchase Receipt Item",
 				],
@@ -199,15 +195,6 @@ doc_events = {
 	"Purchase Receipt": {
 		"on_submit": "scripts.scripts.fabric_length_propagation_pr.propagate_fabric_length",
 		"on_cancel": "scripts.utils.pr_cancel_reset_barcode.reset_printed_qty_on_cancel",
-	},
-	# "Sales Order": {
-	# 	"on_submit": "scripts.scripts.propagate_chosen_fabric.propagate_chosen_fabric"
-	# },
-	"Sales Order": {
-		# Item-defaults population (item_name / stock_uom / uom /
-		# conversion_factor on each row) used to live on a SalesOrder
-		# subclass in scripts.doctype.sales_order. It is now a doc_event.
-		"validate": "scripts.utils.so_validate.populate_item_defaults",
 	},
 	"Work Order": {
 		"on_submit": "scripts.scripts.work_order_scripts.main_scripts.on_submit",

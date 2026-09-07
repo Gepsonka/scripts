@@ -32,7 +32,8 @@ ERP_NEXT_DOCTYPE_MODULE = {
 	# Removed scripts-module duplicates in favour of the standard
 	# ERPNext versions + fixtures (Custom Field / Property Setter /
 	# Client Script). Logic from the old subclasses now runs as
-	# doc_events in scripts/utils/{bom_autoname,so_validate,wo_overrides}.py
+	# doc_events in scripts/utils/{bom_autoname,wo_overrides}.py
+	# (Sales Order is fully stock again - no doc_event, no fixtures).
 	"BOM": "Manufacturing",
 	"Work Order": "Manufacturing",
 	"Work Order Item": "Manufacturing",
