@@ -8,6 +8,12 @@
 # Fields during the same migrate.
 scripts.migrate.strip_phantom_standard_fields
 
+# Restore stock ERPNext Sales Order: the app no longer ships any Sales
+# Order / Sales Order Item fixtures, so delete leftover Custom Fields,
+# Client Scripts and field_order layout overrides from existing sites.
+# (Removing a fixture from JSON never deletes the DB record on its own.)
+scripts.migrate.strip_sales_order_customizations
+
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 scripts.migrate.reattach_standard_erpnext_doctypes

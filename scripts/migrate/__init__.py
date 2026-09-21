@@ -14,8 +14,11 @@ Property Setter / Client Script). The Python logic that used to live
 on the deleted subclasses now runs as doc_events in:
 
   - scripts/utils/bom_autoname.py       (BOM.before_naming)
-  - scripts/utils/so_validate.py        (Sales Order.validate)
   - scripts/utils/wo_overrides.py       (Work Order.validate)
+
+(Sales Order is intentionally stock ERPNext again: its former
+`scripts/utils/so_validate.py` validate hook and all Sales Order /
+Sales Order Item fixtures were removed, so no doc_event remains.)
 
 Because `bench migrate` is additive and never deletes a DocType that
 already exists in the database, sites that were migrated while the
@@ -39,17 +42,17 @@ patch_handler automatically appends `.execute` and resolves it via
 `frappe.get_attr`, so the function on the submodule must be named
 `execute` (not the submodule's own name).
 """
+
 from scripts.migrate._constants import ERP_NEXT_DOCTYPE_MODULE
 from scripts.migrate.reattach_standard_erpnext_doctypes import (
-	reattach_standard_erpnext_doctypes,
 	execute,
+	reattach_standard_erpnext_doctypes,
 )
-
 
 __all__ = [
 	"ERP_NEXT_DOCTYPE_MODULE",
-	"reattach_standard_erpnext_doctypes",
 	"execute",
+	"reattach_standard_erpnext_doctypes",
 	"remove_custom_item_doctype",
 ]
 

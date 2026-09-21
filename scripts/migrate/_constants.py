@@ -12,7 +12,6 @@ Both files import from this leaf module instead, so the import graph
 stays acyclic.
 """
 
-
 # Standard ERPNext doctypes that the scripts app used to ship custom
 # copies of, mapped to the ERPNext module they belong to.
 ERP_NEXT_DOCTYPE_MODULE = {
@@ -32,7 +31,8 @@ ERP_NEXT_DOCTYPE_MODULE = {
 	# Removed scripts-module duplicates in favour of the standard
 	# ERPNext versions + fixtures (Custom Field / Property Setter /
 	# Client Script). Logic from the old subclasses now runs as
-	# doc_events in scripts/utils/{bom_autoname,so_validate,wo_overrides}.py
+	# doc_events in scripts/utils/{bom_autoname,wo_overrides}.py
+	# (Sales Order is fully stock again - no doc_event, no fixtures).
 	"BOM": "Manufacturing",
 	"Work Order": "Manufacturing",
 	"Work Order Item": "Manufacturing",
