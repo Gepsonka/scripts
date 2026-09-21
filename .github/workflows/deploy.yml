@@ -17,9 +17,7 @@ name: Deploy to k3s (frappe-operator)
 #
 # Triggers after "Build and Push Docker Image" succeeds:
 #   - dev branch    -> dev-bench / dev-site  (namespace frappe-dev)   [ACTIVE]
-#   - master branch -> prod-bench / prod-site (namespace frappe-prod) [DISABLED
-#                      until the prod migration in k8s/operator-demo/MIGRATION.md
-#                      is done - flip the `if:` on the deploy-prod job]
+#   - master branch -> prod-bench / prod-site (namespace frappe-prod) [ACTIVE]
 #
 # Promotion rule: prod must deploy the SAME build-NNN tag that passed on
 # dev, never a rebuild. Since the tag comes from the triggering build
@@ -125,20 +123,17 @@ jobs:
         run: rm -f kubeconfig
 
   # ------------------------------------------------------------------
-  # PROD — DISABLED until the prod migration is complete
-  # (k8s/operator-demo/MIGRATION.md, Phases 1-3). To enable:
-  #   1. Create namespace frappe-prod, secrets, prod-bench, prod-site.
-  #   2. Verify prod-site is Ready on the current prod image tag.
-  #   3. Change the `if:` below to:
-  #        if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' }}
-  # The job then deploys to prod-bench exactly like deploy-dev, using
-  # the build tag from the master build (which should be the same tag
-  # already validated on dev — see the promotion rule in the header).
+  # PROD — enabled. Prerequisites (k8s/operator-demo/MIGRATION.md,
+  # Phases 1-3): namespace frappe-prod, secrets, prod-bench, prod-site
+  # exist and prod-site is Ready. Deploys to prod-bench exactly like
+  # deploy-dev, using the build tag from the master build (which should
+  # be the same tag already validated on dev — see the promotion rule
+  # in the header).
   # ------------------------------------------------------------------
   deploy-prod:
-    name: Deploy to prod-bench (DISABLED - prod not migrated)
+    name: Deploy to prod-bench
     runs-on: ubuntu-latest
-    if: false
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' }}
     steps:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
