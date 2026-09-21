@@ -18,7 +18,10 @@ name: Build and Push Docker Image
 #   - merged PRs (also fire push events on the branch)
 #   - manual workflow_dispatch with optional version overrides
 #
-# Frappe Docker pinned to v16.25.0, ERPNext using latest version-16.
+# Frappe Docker pinned to v16.34.0, ERPNext using latest version-16.
+# NOTE: keep Frappe >= the version that ships SMS Settings.allowed_roles
+# (present in v16.34.0); older pins (e.g. v16.25.0) crash bench migrate on
+# erpnext/patches/v16_0/add_transaction_roles_to_sms_settings.py.
 on:
   push:
     branches:
@@ -33,11 +36,11 @@ on:
       frappe_branch:
         description: "Frappe branch/tag (Docker image tag)"
         required: false
-        default: "v16.25.0"
+        default: "v16.34.0"
 
 env:
   ERPNEXT_BRANCH: ${{ github.event.inputs.erpnext_branch || 'version-16' }}
-  FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'v16.25.0' }}
+  FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'v16.34.0' }}
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts
   OPERATOR_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/erpnext-scripts-operator
 
