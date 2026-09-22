@@ -1,0 +1,24 @@
+apiVersion: vyogo.tech/v1
+kind: SiteBackup
+metadata:
+  name: prod-site-daily
+  namespace: frappe-prod
+spec:
+  # Frappe (bench) site name, not the FrappeSite CR name.
+  site: erp.d-trend.com
+  # Daily at 02:00 UTC.
+  schedule: "0 2 * * *"
+  withFiles: true
+  compress: true
+  storage:
+    s3:
+      bucket: erp-backups
+      endpoint: https://090e8dee619ef0d0ab44707ffc760ea4.r2.cloudflarestorage.com
+      region: auto
+      useSSL: true
+      accessKeySecret:
+        name: r2-backup-credentials
+        key: access-key-id
+      secretKeySecret:
+        name: r2-backup-credentials
+        key: secret-access-key

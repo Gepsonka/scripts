@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: r2-push-scripts
+  # NOTE: same file is applied in frappe-prod and frappe-dev; the CronJobs
+  # below mount it at /scripts. Namespace is set at apply time via
+  # `kubectl -n <ns> apply -f` (no namespace field on purpose).
+data:
+  upload.py: |
+    """Upload the latest local bench backup set for $SITE to Cloudflare R2.
+
+    Env: SITE, R2_ENDPOINT, R2_BUCKET, R2_PREFIX (default: SITE),
+         R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, BACKUP_BASE
+         (default /home/frappe/frappe-bench/sites).
+    A backup set = files sharing the YYYYMMDD_HHMMSS timestamp prefix.
+    Uploads to <prefix>/<timestamp>/<filename>. Exits non-zero on failure.
+    """
+    import os
+    import re
+    import sys
+
+    import boto3
+
+    site = os.environ["SITE"]
+    base = os.environ.get("BACKUP_BASE", "/home/frappe/frappe-bench/sites")
+    backup_dir = os.path.join(base, site, "private", "backups")
+    prefix = os.environ.get("R2_PREFIX", site)
+
+    try:
+        files = sorted(os.listdir(backup_dir))
+    except OSError as e:
+        print(f"ERROR: cannot list {backup_dir}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    groups: dict[str, list[str]] = {}
+    for f in files:
+        m = re.match(r"^(\d{8}_\d{6})-", f)
+        if m:
+            groups.setdefault(m.group(1), []).append(f)
+    if not groups:
+        print(f"ERROR: no timestamped backup sets in {backup_dir}: {files}", file=sys.stderr)
+        sys.exit(1)
+
+    # Latest set that contains a database dump.
+    ts = None
+    for cand in sorted(groups, reverse=True):
+        if any(x.endswith("-database.sql.gz") for x in groups[cand]):
+            ts = cand
+            break
+    if ts is None:
+        print(f"ERROR: no set with a database dump in {backup_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=os.environ["R2_ENDPOINT"],
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
+    )
+    bucket = os.environ["R2_BUCKET"]
+    failed = False
+    for f in sorted(groups[ts]):
+        key = f"{prefix}/{ts}/{f}"
+        src = os.path.join(backup_dir, f)
+        try:
+            s3.upload_file(src, bucket, key)
+            size = os.path.getsize(src)
+            print(f"uploaded {key} ({size} bytes)")
+        except Exception as e:  # noqa: BLE001
+            print(f"ERROR uploading {f}: {e}", file=sys.stderr)
+            failed = True
+    sys.exit(1 if failed else 0)

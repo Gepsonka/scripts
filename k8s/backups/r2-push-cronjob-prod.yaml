@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: prod-site-r2-push
+  namespace: frappe-prod
+spec:
+  # Runs after the 02:00 operator bench backup.
+  schedule: "30 2 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: r2-push
+              # App version irrelevant here (only python3/pip3 are used);
+              # IfNotPresent avoids re-pulling the GB-sized image each run.
+              image: brotond/erpnext-scripts-operator:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  pip3 install -q boto3 && python3 /scripts/upload.py
+              env:
+                - name: SITE
+                  value: erp.d-trend.com
+                - name: R2_ENDPOINT
+                  value: https://090e8dee619ef0d0ab44707ffc760ea4.r2.cloudflarestorage.com
+                - name: R2_BUCKET
+                  value: erp-backups
+                - name: R2_PREFIX
+                  value: erp.d-trend.com
+                - name: R2_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: r2-backup-credentials
+                      key: access-key-id
+                - name: R2_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: r2-backup-credentials
+                      key: secret-access-key
+              volumeMounts:
+                - name: sites
+                  mountPath: /home/frappe/frappe-bench/sites
+                  subPath: frappe-sites
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: sites
+              persistentVolumeClaim:
+                claimName: prod-bench-sites
+            - name: scripts
+              configMap:
+                name: r2-push-scripts
