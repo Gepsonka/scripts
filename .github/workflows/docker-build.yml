@@ -27,6 +27,10 @@ on:
     branches:
       - master
       - dev
+    # the NixOS server config (nixos/) is not part of the image; a push that only touches it must not
+    # build, because the server deploys every new master build
+    paths-ignore:
+      - "nixos/**"
   workflow_dispatch:
     inputs:
       erpnext_branch:

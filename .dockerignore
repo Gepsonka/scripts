@@ -11,6 +11,9 @@
 # CI / GitHub
 .github
 
+# NixOS server config (incl. encrypted secrets), not part of the image
+nixos/
+
 # Python artifacts
 **/__pycache__/
 **/*.pyc

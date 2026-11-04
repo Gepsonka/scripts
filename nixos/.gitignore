@@ -1,0 +1,6 @@
+result
+install-root/
+*.key
+*.pem
+host_key*
+*.iso
