@@ -15,7 +15,7 @@ On-prem **ERPNext (frappe-operator) on k3s on NixOS**, mirror of the live `frapp
 - **Secrets with agenix.** Encrypted in git, decrypted at boot with one key, never in the nix store.
 - **Self-assembling.** After install, first boot creates the secrets, operator, MariaDB, bench, site and backups on its own.
 - **Autoinstall ISO.** Boot the stick, walk away: it picks the disk, wipes it, installs offline and reboots.
-- **Weekly auto-update** (Sunday 20:00): security fixes, kernel, k3s. Rolled back on its own if ERPNext is not healthy afterwards.
+- **Weekly auto-update** (Sunday 18:00): security fixes, kernel, k3s. Rolled back on its own if ERPNext is not healthy afterwards.
 - **New ERPNext builds deploy themselves.** Every master build of the `scripts` app (its CI moves the `latest` tag) is rolled out within 5 minutes: migrate, cache clear, smoke test.
 - **Email alerts** when a service goes down, the server goes offline, or an update or deploy fails.
 
@@ -195,7 +195,7 @@ sudo systemctl status cloudflared-tunnel tailscaled erpnext-bootstrap
 
 ### Weekly auto-update
 
-`erpnext-auto-update.timer`, `settings.autoUpdate.at` (default **Sunday 20:00**, server time zone):
+`erpnext-auto-update.timer`, `settings.autoUpdate.at` (default **Sunday 18:00**, server time zone):
 
 1. takes the flake source the running system was built from (`/etc/erpnext/flake`), so a config you deployed by hand is never reverted
 2. moves **only nixpkgs** to the newest commit of its release branch (`nixos-26.05`): security fixes, kernel, k3s, cloudflared, tailscale
@@ -246,7 +246,7 @@ Setup (free account):
 1. Sign up at healthchecks.io with the address that should get the alerts (email notifications are on by default).
 2. In the project, create three checks named exactly:
    - `erpnext-health`: **Simple**, period **5 minutes**, grace **20 minutes**
-   - `erpnext-update`: **Cron** `0 20 * * 0`, time zone **Europe/Budapest**, grace **3 hours**
+   - `erpnext-update`: **Cron** `0 18 * * 0`, time zone **Europe/Budapest**, grace **3 hours**
    - `erpnext-image`: **Simple**, period **5 minutes**, grace **1 hour** (a deploy can take ~30 min)
    (If you skip this, the server creates them on first ping, but with a 1-day period: an offline server would be noticed a day late.)
 3. Project **Settings > API Access > Create ping key**, then

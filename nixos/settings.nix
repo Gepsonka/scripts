@@ -48,7 +48,7 @@
   autoUpdate = {
     enable = true;
     # systemd calendar time, in timeZone above
-    at = "Sun *-*-* 20:00:00";
+    at = "Sun *-*-* 18:00:00";
     # reboot after the update, only when the kernel changed (a few minutes of ERPNext downtime)
     allowReboot = true;
   };
