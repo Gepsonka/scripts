@@ -18,8 +18,14 @@
 # Result: a self-contained image with production-built assets for frappe,
 # erpnext and the scripts app. No `bench build` at runtime.
 #
+# Versions are pinned to exact release tags so a rebuild never pulls in an
+# unreviewed Frappe/ERPNext upgrade (and its migrations). FRAPPE_BRANCH is
+# both the frappe git tag and the frappe/build + frappe/base image tag; the
+# ERPNext tag lives in apps.json (CI: ERPNEXT_BRANCH in docker-build.yml).
+# Bump both together, in one reviewed commit.
+#
 
-ARG FRAPPE_BRANCH=version-16
+ARG FRAPPE_BRANCH=v16.34.0
 ARG FRAPPE_IMAGE_PREFIX=frappe
 
 # -----------------------------------------------------------------------------
@@ -27,7 +33,7 @@ ARG FRAPPE_IMAGE_PREFIX=frappe
 # -----------------------------------------------------------------------------
 FROM ${FRAPPE_IMAGE_PREFIX}/build:${FRAPPE_BRANCH} AS bench-init
 
-ARG FRAPPE_BRANCH=version-16
+ARG FRAPPE_BRANCH=v16.34.0
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG CACHE_BUST=""
 
@@ -224,7 +230,7 @@ USER frappe
 # -----------------------------------------------------------------------------
 # Stage 2: runtime image (no build tools)
 # -----------------------------------------------------------------------------
-ARG FRAPPE_BRANCH=version-16
+ARG FRAPPE_BRANCH=v16.34.0
 FROM ${FRAPPE_IMAGE_PREFIX}/base:${FRAPPE_BRANCH} AS runtime
 
 ENV FRAPPE_BRANCH=${FRAPPE_BRANCH}
