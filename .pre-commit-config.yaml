@@ -1,4 +1,5 @@
-exclude: 'node_modules|.git'
+# nixos/ is the server config (Nix, shell), not part of the Frappe app
+exclude: 'node_modules|.git|^nixos/'
 default_stages: [pre-commit]
 fail_fast: false
 

@@ -2,6 +2,12 @@
 
 scripts
 
+### Server
+
+`nixos/` holds the NixOS config of the on-prem ERPNext server (k3s + frappe-operator, Cloudflare tunnel,
+Tailscale SSH, weekly OS updates, automatic deploys of new `master` image builds, email alerts).
+It is a separate flake: see [nixos/README.md](nixos/README.md).
+
 ### Installation
 
 You can install this app using the [bench](https://github.com/frappe/bench) CLI:
