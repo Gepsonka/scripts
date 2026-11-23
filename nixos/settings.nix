@@ -84,7 +84,7 @@
     };
     # Cloudflare R2 bucket that receives the nightly backups (credentials are in agenix).
     r2 = {
-      endpoint = "https://090e8dee619ef0d0ab44707ffc760ea4.r2.cloudflarestorage.com";
+      endpoint = "https://0ce4d146cb87a21d64ce417b6e259bde.eu.r2.cloudflarestorage.com";
       bucket = "erp-backups";
       prefix = "erp.d-trend.com";
     };
