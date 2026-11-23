@@ -17,7 +17,10 @@ name: Deploy to k3s (frappe-operator)
 #
 # Triggers after "Build and Push Docker Image" succeeds:
 #   - dev branch    -> dev-bench / dev-site  (namespace frappe-dev)   [ACTIVE]
-#   - master branch -> prod-bench / prod-site (namespace frappe-prod) [ACTIVE]
+#   - master branch -> prod-bench / prod-site (namespace frappe-prod) [DISABLED]
+#     Prod moved to the on-prem NixOS server (nixos/), which pulls new
+#     builds itself (erpnext-image-update). This k3s prod is frozen.
+#     Re-enable only by setting the repo variable DEPLOY_PROD_K3S=true.
 #
 # Promotion rule: prod must deploy the SAME build-NNN tag that passed on
 # dev, never a rebuild. Since the tag comes from the triggering build
@@ -133,7 +136,8 @@ jobs:
   deploy-prod:
     name: Deploy to prod-bench
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' }}
+    # Off since the 2026-11-23 cutover to the on-prem server (see header).
+    if: ${{ vars.DEPLOY_PROD_K3S == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' }}
     steps:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
